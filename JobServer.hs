@@ -7,7 +7,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Network
 import Control.Monad (forever, filterM)
-import System.IO (Handle, hClose)
+import System.IO (Handle, hClose, hSetBuffering, BufferMode(NoBuffering))
 import System.Process (runInteractiveProcess, ProcessHandle, waitForProcess)
 
 import Pipes
@@ -72,6 +72,7 @@ listener port jobQueue = do
     listenSock <- listenOn port 
     forever $ do
         (h,_,_) <- accept listenSock
+        hSetBuffering h NoBuffering
         res <- runEitherT $ hGetBinary h
         case res of
           Right jobReq -> atomically $ writeTQueue jobQueue (Job h jobReq)

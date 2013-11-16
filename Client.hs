@@ -3,7 +3,7 @@ import Network
 import System.Environment
 import System.Exit
 import qualified Data.ByteString as BS
-import System.IO (stderr, stdout, hPutStrLn)
+import System.IO (stderr, stdout, hPutStrLn, hSetBuffering, BufferMode(NoBuffering))
 import Pipes
 
 import Types
@@ -33,6 +33,7 @@ main' host port childArgs = do
 runJob :: HostName -> PortID -> String -> [String] -> EitherT String IO ExitCode
 runJob hostname port cmd args = do
     h <- fmapLT show $ tryIO $ connectTo hostname port
+    liftIO $ hSetBuffering h NoBuffering
     liftIO $ hPutBinary h $ JobRequest cmd args
     go $ fromHandleBinary h
   where
