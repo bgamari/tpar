@@ -52,7 +52,6 @@ interleave producers = do
 runProcess :: FilePath -> [String] -> Producer Status IO ()
 runProcess cmd args = do
     (stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args
-    liftIO $ print cmd
     interleave [ stderr >-> PP.map PutStderr
                , stdout >-> PP.map PutStdout
                ]
@@ -78,7 +77,7 @@ listener port jobQueue = do
           Right jobReq -> atomically $ writeTQueue jobQueue (Job h jobReq)
           Left  err    -> do hPutBinary h $ Error err
                              hClose h
-                             putStr err
+                             putStr $ "Error in request: "++err
 
 runWorker :: TQueue Job -> Worker -> IO ()
 runWorker jobQueue worker = forever $ do
