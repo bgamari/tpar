@@ -1,14 +1,17 @@
-module Util (hGetBinary, hPutBinary) where
+module Util ( hGetBinary, hPutBinary
+            , toHandleBinary, fromHandleBinary
+            ) where
 
 import Data.Word
 import Control.Error
-import Control.Monad (when)
+import Control.Monad (when, forever)
 import Control.Monad.IO.Class
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
 import qualified Data.ByteString.Lazy as LBS
-import System.IO (Handle)       
+import System.IO (Handle)
+import Pipes
 
 magicNumber :: Word32
 magicNumber = 0xdeadbeef
@@ -27,7 +30,7 @@ hGetBinary h = do
     body <- liftIO $ LBS.hGet h (fromIntegral len)
     ret <- runGetError get body
     return ret
-
+    
 hPutBinary :: Binary a => Handle -> a -> IO ()
 hPutBinary h a = do
     let bs = runPut (put a)
@@ -35,3 +38,11 @@ hPutBinary h a = do
         putWord32le magicNumber
         putWord32le $ fromIntegral $ LBS.length bs
     LBS.hPut h bs
+
+toHandleBinary :: Binary a => Handle -> Consumer a IO ()
+toHandleBinary h =
+    forever $ await >>= liftIO . hPutBinary h
+
+fromHandleBinary :: Binary a => Handle -> Producer a IO ()
+fromHandleBinary h =
+    forever $ liftIO (runEitherT $ hGetBinary h) >>= yield . either (const $ error "fail") id

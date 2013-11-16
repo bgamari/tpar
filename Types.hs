@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}                
+
 module Types where
                 
 import System.Exit
@@ -6,23 +8,24 @@ import Data.ByteString (ByteString)
 import Control.Applicative
 import Data.Binary.Put
 import Data.Binary.Get
+import GHC.Generics
 
-data JobRequest = JobRequest { jobCommand :: String }
-                deriving (Show)
+data JobRequest = JobRequest { jobCommand :: String
+                             , jobArgs    :: [String]
+                             }
+                deriving (Show, Generic)
 
 instance Binary JobRequest where
-    get = JobRequest <$> get
-    put (JobRequest cmd) = put cmd
+    get = JobRequest <$> get <*> get
+    put (JobRequest cmd args) = put cmd >> put args
 
-data JobResult = JobResult { resultStdout :: ByteString
-                           , resultStderr :: ByteString
-                           , resultExitCode :: ExitCode
-                           }
-               deriving (Show)
+data Status = PutStdout !ByteString
+            | PutStderr !ByteString
+            | JobDone   !ExitCode
+            | Error      String
+            deriving (Show, Generic)
 
-instance Binary JobResult where
-    get = JobResult <$> get <*> get <*> get
-    put (JobResult out err code) = put out >> put err >> put code
+instance Binary Status
 
 instance Binary ExitCode where
     get = do
