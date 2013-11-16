@@ -1,4 +1,4 @@
-import Control.Error
+import Control.Error hiding (err)
 import Network
 import System.Environment
 import System.Exit
@@ -9,6 +9,7 @@ import Pipes
 import Types
 import Util
 
+main :: IO ()
 main = do
     args <- liftIO getArgs
     let (myArgs,childArgs) = if "--" `elem` args
@@ -26,26 +27,23 @@ main' :: HostName -> PortID -> [String] -> EitherT String IO ExitCode
 main' host port childArgs = do
     (cmd,args) <- case childArgs of
         cmd:args  -> right (cmd, args)
-        otherwise -> left "No command given"
+        _         -> left "No command given"
     runJob host port cmd args
     
 runJob :: HostName -> PortID -> String -> [String] -> EitherT String IO ExitCode
 runJob hostname port cmd args = do
-    h <- liftIO $ connectTo hostname port
-    
+    h <- fmapLT show $ tryIO $ connectTo hostname port
     liftIO $ hPutBinary h $ JobRequest cmd args
-    handleResult $ fromHandleBinary h
-    
-handleResult :: Producer Status IO () -> EitherT String IO ExitCode
-handleResult = go
+    go $ fromHandleBinary h
   where
     go prod = do
       status <- liftIO $ next prod 
       case status of
-        Right (x, prod') ->
+        Right (Left err, _) -> left $ "handleResult: Stream error: "++err
+        Right (Right x, prod') ->
           case x of
             PutStdout a  -> liftIO (BS.hPut stdout a) >> go prod'
             PutStderr a  -> liftIO (BS.hPut stderr a) >> go prod'
+            Error err    -> left err
             JobDone code -> return code
-        Left e -> left "handleResult: Failed to return exit code before end of stream"
-  
+        Left _ -> left "handleResult: Failed to return exit code before end of stream"
