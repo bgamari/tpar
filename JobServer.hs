@@ -19,9 +19,9 @@ import Util
 
 port :: PortID
 port = PortNumber 2228       
-     
+
 workers :: [Worker]
-workers = [localWorker, localWorker]
+workers = [localWorker, localWorker, sshWorker "ben-server"]
 
 type Worker = JobRequest -> Producer Status IO ()
 
@@ -78,8 +78,9 @@ runProcess cmd args = do
 localWorker :: Worker
 localWorker req = runProcess (jobCommand req) (jobArgs req)
 
-remoteWorker :: HostName -> Worker
-remoteWorker host req = do undefined
+sshWorker :: HostName -> Worker
+sshWorker host req = do
+    runProcess "ssh" ([host, "--", jobCommand req]++jobArgs req)
 
 data Job = Job { jobConn    :: Handle
                , jobRequest :: JobRequest
