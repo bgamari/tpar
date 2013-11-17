@@ -37,17 +37,35 @@ processPipes cmd args = do
 interleave :: [Producer a IO ()] -> Producer a IO ()
 interleave producers = do
     queue <- liftIO newTQueueIO
-    mapM (liftIO . go queue) producers >>= watch queue
+    active <- liftIO $ atomically $ newTVar (length producers)
+    mapM_ (liftIO . listen active queue) producers
+    watch active queue
   where
-    go :: TQueue a -> Producer a IO () -> IO (Async ())
-    go queue producer = async $ runEffect $ producer >-> put
-      where put = forever $ await >>= liftIO . atomically . writeTQueue queue
+    listen :: TVar Int -> TQueue (Maybe a) -> Producer a IO () -> IO (Async ())
+    listen active queue producer = async $ go producer
+      where go prod = do
+              n <- next prod
+              case n of
+                Right (x, prod')  -> do liftIO $ atomically $ writeTQueue queue (Just x)
+                                        go prod'
+                Left _            -> do liftIO $ atomically $ do
+                                          modifyTVar active (subtract 1)
+                                          writeTQueue queue Nothing
 
-    watch :: TQueue a -> [Async ()] -> Producer a IO ()
-    watch queue [] = return ()
-    watch queue tasks = do
-      liftIO (atomically $ readTQueue queue) >>= yield
-      filterM (\t->liftIO $ isNothing `fmap` poll t) tasks >>= watch queue
+    watch :: TVar Int -> TQueue (Maybe a) -> Producer a IO ()
+    watch active queue = do
+      res <- liftIO $ atomically $ do
+        e <- tryReadTQueue queue
+        case e of
+          Just e'  -> return (Just e')
+          Nothing  -> do n <- readTVar active
+                         if n > 0
+                           then Just <$> readTQueue queue
+                           else return Nothing
+      case res of
+        Just (Just x)  -> yield x >> watch active queue
+        Just Nothing   -> watch active queue
+        Nothing        -> return ()
 
 runProcess :: FilePath -> [String] -> Producer Status IO ()
 runProcess cmd args = do
