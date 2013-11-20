@@ -14,7 +14,7 @@ import Util
        
 data Opts = Opts { port      :: PortNumber
                  , host      :: String
-                 , keepEnv   :: Bool
+                 --, keepEnv   :: Bool
                  , hideEnv   :: [String]
                    -- * Strip this prefix path when determining current working directory
                  , stripPath :: FilePath
@@ -32,9 +32,9 @@ opts = Opts
                   <> value "localhost"
                   <> help "job server hostname"
                    )
-    <*> switch     ( short 'e' <> long "keep-env"
-                  <> help "keep environment variables"
-                   )
+    -- <*> switch     ( short 'e' <> long "keep-env"
+    --               <> help "keep environment variables"
+    --                )
     <*> nullOption ( short 'h' <> long "hide"
                   <> help "hide the given environment variables"
                    )
@@ -50,9 +50,10 @@ parserInfo = info opts fullDesc
 main :: IO ()
 main = do
     opts <- execParser parserInfo
-    env <- if keepEnv opts
-             then Just . filter (\(k,_)->k `notElem` hideEnv opts) <$> getEnvironment
-             else return Nothing
+    --env <- if keepEnv opts
+    --         then Just . filter (\(k,_)->k `notElem` hideEnv opts) <$> getEnvironment
+    --         else return Nothing
+    let env = Nothing -- TODO
     cwd <- getCurrentDirectory
     let cwd' = maybe cwd id $ stripPrefix (stripPath opts) cwd
     res <- runEitherT $ main' (host opts) (PortNumber $ port opts) (childArgs opts) cwd' env
