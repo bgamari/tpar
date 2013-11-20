@@ -58,9 +58,9 @@ main = do
     let cwd' = maybe cwd id $ stripPrefix (stripPath opts) cwd
     res <- runEitherT $ main' (host opts) (PortNumber $ port opts) (childArgs opts) cwd' env
     case res of
-      Right code  -> liftIO $ exitWith code
-      Left err    -> do liftIO $ hPutStrLn stderr $ "error: "++err
-                        liftIO $ exitWith (ExitFailure 250)
+      Right code  -> exitWith code
+      Left err    -> do hPutStrLn stderr $ "error: "++err
+                        exitWith (ExitFailure 250)
 
 main' :: HostName
       -> PortID
