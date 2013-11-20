@@ -10,16 +10,17 @@ import Data.Binary.Put
 import Data.Binary.Get
 import GHC.Generics
 
-data JobRequest = JobRequest { jobCommand :: String
+data JobRequest = JobRequest { jobCommand :: FilePath
                              , jobArgs    :: [String]
-                             , jobEnv     :: [(String, String)]
+                             , jobCwd     :: FilePath
+                             , jobEnv     :: Maybe [(String, String)]
                              }
                 deriving (Show, Generic)
 
 instance Binary JobRequest where
-    get = JobRequest <$> get <*> get <*> get
-    put (JobRequest cmd args env) =
-        put cmd >> put args >> put env
+    get = JobRequest <$> get <*> get <*> get <*> get
+    put (JobRequest cmd args cwd env) =
+        put cmd >> put args >> put cwd >> put env
 
 data Status = PutStdout !ByteString
             | PutStderr !ByteString

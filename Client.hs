@@ -43,26 +43,38 @@ main :: IO ()
 main = do
     opts <- execParser parserInfo
     env <- if keepEnv opts
-             then filter (\(k,_)->k `notElem` hideEnv opts) <$> getEnvironment
-             else return []
-    res <- runEitherT $ main' (host opts) (PortNumber $ port opts) env (childArgs opts)
+             then Just . filter (\(k,_)->k `notElem` hideEnv opts) <$> getEnvironment
+             else return Nothing
+    let cwd = "/" -- TODO
+    res <- runEitherT $ main' (host opts) (PortNumber $ port opts) (childArgs opts) cwd env
     case res of
       Right code  -> liftIO $ exitWith code
       Left err    -> do liftIO $ hPutStrLn stderr $ "error: "++err
                         liftIO $ exitWith (ExitFailure 250)
 
-main' :: HostName -> PortID -> [(String,String)] -> [String] -> EitherT String IO ExitCode
-main' host port env childArgs = do
+main' :: HostName
+      -> PortID
+      -> [String]
+      -> FilePath
+      -> Maybe [(String,String)]
+      -> EitherT String IO ExitCode
+main' host port childArgs cwd env = do
     (cmd,args) <- case childArgs of
         cmd:args  -> right (cmd, args)
         _         -> left "No command given"
-    runJob host port env cmd args
+    runJob host port cmd args cwd env
     
-runJob :: HostName -> PortID -> [(String,String)] -> String -> [String] -> EitherT String IO ExitCode
-runJob hostname port env cmd args = do
+runJob :: HostName
+       -> PortID
+       -> String                  -- ^ Command name
+       -> [String]                -- ^ Arguments
+       -> FilePath                -- ^ Current working directory
+       -> Maybe [(String,String)] -- ^ Environment
+       -> EitherT String IO ExitCode
+runJob hostname port cmd args cwd env = do
     h <- fmapLT show $ tryIO $ connectTo hostname port
     liftIO $ hSetBuffering h NoBuffering
-    liftIO $ hPutBinary h $ JobRequest cmd args env
+    liftIO $ hPutBinary h $ JobRequest cmd args cwd env
     go $ fromHandleBinary h
   where
     go prod = do
