@@ -1,9 +1,11 @@
-import Control.Error hiding (err)
 import Network
 import System.Environment
 import System.Exit
-import qualified Data.ByteString as BS
+import System.Directory (getCurrentDirectory)
 import System.IO (stderr, stdout, hPutStrLn, hSetBuffering, BufferMode(NoBuffering))
+import Control.Error hiding (err)
+import Data.List (stripPrefix)
+import qualified Data.ByteString as BS
 import Pipes
 import Options.Applicative
 
@@ -14,6 +16,8 @@ data Opts = Opts { port      :: PortNumber
                  , host      :: String
                  , keepEnv   :: Bool
                  , hideEnv   :: [String]
+                   -- * Strip this prefix path when determining current working directory
+                 , stripPath :: FilePath
                  , childArgs :: [String]
                  }
 
@@ -34,6 +38,10 @@ opts = Opts
     <*> nullOption ( short 'h' <> long "hide"
                   <> help "hide the given environment variables"
                    )
+    <*> strOption  ( short 's' <> long "strip"
+                  <> value ""
+                  <> help "strip this prefix path when determining current working directory"
+                   )
     <*> arguments1 Just idm
 
 parserInfo :: ParserInfo Opts
@@ -45,8 +53,9 @@ main = do
     env <- if keepEnv opts
              then Just . filter (\(k,_)->k `notElem` hideEnv opts) <$> getEnvironment
              else return Nothing
-    let cwd = "/" -- TODO
-    res <- runEitherT $ main' (host opts) (PortNumber $ port opts) (childArgs opts) cwd env
+    cwd <- getCurrentDirectory
+    let cwd' = maybe cwd id $ stripPrefix (stripPath opts) cwd
+    res <- runEitherT $ main' (host opts) (PortNumber $ port opts) (childArgs opts) cwd' env
     case res of
       Right code  -> liftIO $ exitWith code
       Left err    -> do liftIO $ hPutStrLn stderr $ "error: "++err
