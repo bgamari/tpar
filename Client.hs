@@ -54,9 +54,9 @@ main = do
     --         then Just . filter (\(k,_)->k `notElem` hideEnv opts) <$> getEnvironment
     --         else return Nothing
     let env = Nothing -- TODO
-    cwd <- getCurrentDirectory
-    let cwd' = maybe cwd id $ stripPrefix (stripPath opts) cwd
-    res <- runEitherT $ main' (host opts) (PortNumber $ port opts) (childArgs opts) cwd' env
+    let stripCwd cwd = maybe cwd id $ stripPrefix (stripPath opts) cwd
+    cwd <- stripCwd <$> getCurrentDirectory
+    res <- runEitherT $ main' (host opts) (PortNumber $ port opts) (childArgs opts) cwd env
     case res of
       Right code  -> exitWith code
       Left err    -> do hPutStrLn stderr $ "error: "++err
