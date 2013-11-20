@@ -25,13 +25,16 @@ workers = [localWorker, localWorker, sshWorker "ben-server"]
 
 type Worker = JobRequest -> Producer Status IO ()
 
-processPipes :: FilePath -> [String]
+processPipes :: FilePath                -- ^ Executable name
+             -> [String]                -- ^ Arguments
+             -> Maybe FilePath          -- ^ Current working directory
+             -> Maybe [(String,String)] -- ^ Optional environment
              -> IO ( Consumer ByteString IO ()
                    , Producer ByteString IO ()
                    , Producer ByteString IO ()
                    , ProcessHandle)
-processPipes cmd args = do
-    (stdin, stdout, stderr, phandle) <- runInteractiveProcess cmd args Nothing Nothing
+processPipes cmd args cwd env = do
+    (stdin, stdout, stderr, phandle) <- runInteractiveProcess cmd args cwd env
     return (PBS.toHandle stdin, PBS.fromHandle stdout, PBS.fromHandle stderr, phandle)
 
 interleave :: [Producer a IO ()] -> Producer a IO ()
@@ -67,20 +70,21 @@ interleave producers = do
         Just Nothing   -> watch active queue
         Nothing        -> return ()
 
-runProcess :: FilePath -> [String] -> Producer Status IO ()
-runProcess cmd args = do
-    (stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args
+runProcess :: FilePath -> [String] -> Maybe FilePath
+           -> Producer Status IO ()
+runProcess cmd args cwd = do
+    (stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args cwd Nothing
     interleave [ stderr >-> PP.map PutStderr
                , stdout >-> PP.map PutStdout
                ]
     liftIO (waitForProcess phandle) >>= yield . JobDone
 
 localWorker :: Worker
-localWorker req = runProcess (jobCommand req) (jobArgs req)
+localWorker req = runProcess (jobCommand req) (jobArgs req) Nothing
 
 sshWorker :: HostName -> Worker
 sshWorker host req = do
-    runProcess "ssh" ([host, "--", jobCommand req]++jobArgs req)
+    runProcess "ssh" ([host, "--", jobCommand req]++jobArgs req) Nothing
 
 data Job = Job { jobConn    :: Handle
                , jobRequest :: JobRequest
