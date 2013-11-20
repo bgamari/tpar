@@ -17,7 +17,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 executable job-server
-  main-is:             JobServer.hs
+  main-is:             Server.hs
   other-extensions:    DeriveGeneric
   build-depends:       base >=4.5 && <4.7,
                        ghc-prim,

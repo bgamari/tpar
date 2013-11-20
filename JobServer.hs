@@ -1,3 +1,14 @@
+module JobServer ( -- * Workers
+                   Worker
+                 , localWorker
+                 , sshWorker
+                   -- * Running
+                 , start
+                   -- * Convenient re-exports
+                 , PortID(..)
+                 , PortNumber
+                 ) where
+                
 import Control.Error
 import Control.Concurrent.Async
 import Control.Concurrent.STM
@@ -16,12 +27,6 @@ import qualified Pipes.ByteString as PBS
 
 import Types
 import Util
-
-port :: PortID
-port = PortNumber 2228       
-
-workers :: [Worker]
-workers = [localWorker, localWorker, sshWorker "ben-server"]
 
 type Worker = JobRequest -> Producer Status IO ()
 
@@ -107,9 +112,6 @@ runWorker :: TQueue Job -> Worker -> IO ()
 runWorker jobQueue worker = forever $ do
     job <- atomically (readTQueue jobQueue)
     runEffect $ worker (jobRequest job) >-> toHandleBinary (jobConn job)
-
-main :: IO ()    
-main = start port workers
      
 start :: PortID -> [Worker] -> IO ()
 start _ [] = putStrLn "Error: No workers provided"
