@@ -12,12 +12,14 @@ import GHC.Generics
 
 data JobRequest = JobRequest { jobCommand :: String
                              , jobArgs    :: [String]
+                             , jobEnv     :: [(String, String)]
                              }
                 deriving (Show, Generic)
 
 instance Binary JobRequest where
-    get = JobRequest <$> get <*> get
-    put (JobRequest cmd args) = put cmd >> put args
+    get = JobRequest <$> get <*> get <*> get
+    put (JobRequest cmd args env) =
+        put cmd >> put args >> put env
 
 data Status = PutStdout !ByteString
             | PutStderr !ByteString
