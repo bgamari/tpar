@@ -14,8 +14,8 @@ import Util
        
 data Opts = Opts { port      :: PortNumber
                  , host      :: String
-                 --, keepEnv   :: Bool
-                 , hideEnv   :: [String]
+                 -- , keepEnv   :: Bool
+                 -- , hideEnv   :: [String]
                    -- * Strip this prefix path when determining current working directory
                  , stripPath :: FilePath
                  , childArgs :: [String]
@@ -35,9 +35,9 @@ opts = Opts
     -- <*> switch     ( short 'e' <> long "keep-env"
     --               <> help "keep environment variables"
     --                )
-    <*> nullOption ( short 'h' <> long "hide"
-                  <> help "hide the given environment variables"
-                   )
+    -- <*> nullOption ( short 'h' <> long "hide"
+    --               <> help "hide the given environment variables"
+    --                )
     <*> strOption  ( short 's' <> long "strip"
                   <> value ""
                   <> help "strip this prefix path when determining current working directory"
