@@ -87,9 +87,11 @@ runProcess cmd args cwd = do
 localWorker :: Worker
 localWorker req = runProcess (jobCommand req) (jobArgs req) Nothing
 
-sshWorker :: HostName -> Worker
-sshWorker host req = do
-    runProcess "ssh" ([host, "--", jobCommand req]++jobArgs req) Nothing
+sshWorker :: HostName -> FilePath -> Worker
+sshWorker host rootPath req = do
+    runProcess "ssh" ([host, "--", "cd", cwd, ";", jobCommand req]++jobArgs req) Nothing
+  where
+    cwd = rootPath ++ "/" ++ jobCwd req  -- HACK
 
 data Job = Job { jobConn    :: Handle
                , jobRequest :: JobRequest
