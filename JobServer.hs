@@ -11,6 +11,7 @@ module JobServer ( -- * Workers
                 
 import Control.Error
 import Control.Applicative
+import Control.Monad (void)
 import Data.Binary
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
@@ -29,7 +30,6 @@ import Types
 import Util
 
 type Worker = JobRequest -> Producer Status IO ()
-
 
 localWorker :: Worker
 localWorker req = runProcess (jobCommand req) (jobArgs req) Nothing >-> PP.map PStatus
@@ -52,10 +52,14 @@ listener port jobQueue = do
         hSetBuffering h NoBuffering
         res <- runEitherT $ hGetBinary h
         case res of
-          Right jobReq -> atomically $ writeTQueue jobQueue (Job h jobReq)
-          Left  err    -> do hPutBinary h $ Error err
-                             hClose h
-                             putStr $ "Error in request: "++err
+          Right (QueueJob jobReq) ->
+            atomically $ writeTQueue jobQueue (Job h jobReq)
+          Right WorkerReady       ->
+            void $ async $ handleRemoteWorker jobQueue h
+          Left  err    -> do
+            hPutBinary h $ Error err
+            hClose h
+            putStr $ "Error in request: "++err
 
 runWorker :: TQueue Job -> Worker -> IO ()
 runWorker jobQueue worker = forever $ do
@@ -68,3 +72,16 @@ start port workers = do
     jobQueue <- newTQueueIO
     mapM_ (async . runWorker jobQueue) workers 
     listener port jobQueue
+
+handleRemoteWorker :: TQueue Job -> Handle -> IO ()
+handleRemoteWorker jobQueue h = do
+    job <- atomically (readTQueue jobQueue)
+    hPutBinary h (jobRequest job)
+    runEffect $ PP.fromHandle h >-> PP.toHandle (jobConn job)
+    
+remoteWorker :: HostName -> PortID -> EitherT String IO ()
+remoteWorker host port = forever $ do
+    h <- fmapLT show $ tryIO $ connectTo host port
+    liftIO $ hSetBuffering h NoBuffering
+    req <- hGetBinary h
+    liftIO $ runEffect $ localWorker req >-> toHandleBinary h

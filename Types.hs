@@ -7,6 +7,14 @@ import Data.Binary
 import GHC.Generics
 import ProcessPipe
 
+-- | This is the first thing that will be sent over a new
+-- request socket
+data Request = QueueJob JobRequest
+             | WorkerReady
+             deriving (Show, Generic)
+
+instance Binary Request
+
 data JobRequest = JobRequest { jobCommand :: FilePath
                              , jobArgs    :: [String]
                              , jobCwd     :: FilePath

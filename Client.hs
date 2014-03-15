@@ -85,7 +85,7 @@ runJob :: HostName
 runJob hostname port cmd args cwd env = do
     h <- fmapLT show $ tryIO $ connectTo hostname port
     liftIO $ hSetBuffering h NoBuffering
-    liftIO $ hPutBinary h $ JobRequest cmd args cwd env
+    liftIO $ hPutBinary h $ QueueJob $ JobRequest cmd args cwd env
     go $ fromHandleBinary h
   where
     go prod = do
