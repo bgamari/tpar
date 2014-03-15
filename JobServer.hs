@@ -65,15 +65,15 @@ listener port jobQueue = do
             tryIO' $ hPutBinary h $ Error err
             tryIO' $ hClose h
 
-runWorker :: TQueue Job -> Worker -> EitherT String IO ()
-runWorker jobQueue worker = forever $ do
+runWorker :: TQueue Job -> Worker -> IO ()
+runWorker jobQueue worker = forever $ runEitherT $ do
     job <- liftIO $ atomically (readTQueue jobQueue)
     tryIO' $ runEffect $ worker (jobRequest job) >-> jobConn job
     
 start :: PortID -> [Worker] -> IO ()
 start port workers = do
     jobQueue <- newTQueueIO
-    mapM_ (async . runEitherT . runWorker jobQueue) workers 
+    mapM_ (async . runWorker jobQueue) workers 
     listener port jobQueue
 
 handleRemoteWorker :: TQueue Job -> Handle -> EitherT String IO ()
