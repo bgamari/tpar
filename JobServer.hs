@@ -40,7 +40,7 @@ sshWorker host rootPath req = do
   where
     cwd = rootPath ++ "/" ++ jobCwd req  -- HACK
 
-data Job = Job { jobConn    :: Handle
+data Job = Job { jobConn    :: Consumer Status IO ()
                , jobRequest :: JobRequest
                }
 
@@ -53,7 +53,7 @@ listener port jobQueue = do
         res <- runEitherT $ hGetBinary h
         case res of
           Right (QueueJob jobReq) ->
-            atomically $ writeTQueue jobQueue (Job h jobReq)
+            atomically $ writeTQueue jobQueue (Job (toHandleBinary h) jobReq)
           Right WorkerReady       ->
             void $ async $ handleRemoteWorker jobQueue h
           Left  err    -> do
@@ -64,8 +64,8 @@ listener port jobQueue = do
 runWorker :: TQueue Job -> Worker -> IO ()
 runWorker jobQueue worker = forever $ do
     job <- atomically (readTQueue jobQueue)
-    runEffect $ worker (jobRequest job) >-> toHandleBinary (jobConn job)
-     
+    runEffect $ worker (jobRequest job) >-> jobConn job
+    
 start :: PortID -> [Worker] -> IO ()
 start _ [] = putStrLn "Error: No workers provided"
 start port workers = do
@@ -77,11 +77,17 @@ handleRemoteWorker :: TQueue Job -> Handle -> IO ()
 handleRemoteWorker jobQueue h = do
     job <- atomically (readTQueue jobQueue)
     hPutBinary h (jobRequest job)
-    runEffect $ PP.fromHandle h >-> PP.toHandle (jobConn job)
+    runEffect $ fromHandleBinary h >-> handleError >-> jobConn job
+  where
+    handleError = do
+      res <- await
+      case res of
+        Left err -> yield $ Error err
+        Right a  -> yield a
     
 remoteWorker :: HostName -> PortID -> EitherT String IO ()
 remoteWorker host port = forever $ do
     h <- fmapLT show $ tryIO $ connectTo host port
     liftIO $ hSetBuffering h NoBuffering
-    req <- hGetBinary h
-    liftIO $ runEffect $ localWorker req >-> toHandleBinary h
+    jobReq <- hGetBinary h
+    liftIO $ runEffect $ localWorker jobReq >-> toHandleBinary h
