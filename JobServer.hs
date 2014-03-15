@@ -2,6 +2,7 @@ module JobServer ( -- * Workers
                    Worker
                  , localWorker
                  , sshWorker
+                 , remoteWorker
                    -- * Running
                  , start
                    -- * Convenient re-exports
@@ -67,7 +68,6 @@ runWorker jobQueue worker = forever $ do
     runEffect $ worker (jobRequest job) >-> jobConn job
     
 start :: PortID -> [Worker] -> IO ()
-start _ [] = putStrLn "Error: No workers provided"
 start port workers = do
     jobQueue <- newTQueueIO
     mapM_ (async . runWorker jobQueue) workers 
