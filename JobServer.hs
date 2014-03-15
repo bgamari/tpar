@@ -10,86 +10,33 @@ module JobServer ( -- * Workers
                  ) where
                 
 import Control.Error
-import Control.Concurrent.Async
-import Control.Concurrent.STM
 import Control.Applicative
 import Data.Binary
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Network
 import Control.Monad (forever, filterM)
+
 import System.IO (Handle, hClose, hSetBuffering, BufferMode(NoBuffering))
-import System.Process (runInteractiveProcess, ProcessHandle, waitForProcess)
+import Control.Concurrent.Async
+import Control.Concurrent.STM
 
 import Pipes
 import qualified Pipes.Prelude as PP
-import qualified Pipes.ByteString as PBS
 
+import ProcessPipe
 import Types
 import Util
 
 type Worker = JobRequest -> Producer Status IO ()
 
-processPipes :: FilePath                -- ^ Executable name
-             -> [String]                -- ^ Arguments
-             -> Maybe FilePath          -- ^ Current working directory
-             -> Maybe [(String,String)] -- ^ Optional environment
-             -> IO ( Consumer ByteString IO ()
-                   , Producer ByteString IO ()
-                   , Producer ByteString IO ()
-                   , ProcessHandle)
-processPipes cmd args cwd env = do
-    (stdin, stdout, stderr, phandle) <- runInteractiveProcess cmd args cwd env
-    return (PBS.toHandle stdin, PBS.fromHandle stdout, PBS.fromHandle stderr, phandle)
-
-interleave :: [Producer a IO ()] -> Producer a IO ()
-interleave producers = do
-    queue <- liftIO newTQueueIO
-    active <- liftIO $ atomically $ newTVar (length producers)
-    mapM_ (liftIO . listen active queue) producers
-    watch active queue
-  where
-    listen :: TVar Int -> TQueue (Maybe a) -> Producer a IO () -> IO (Async ())
-    listen active queue producer = async $ go producer
-      where go prod = do
-              n <- next prod
-              case n of
-                Right (x, prod')  -> do liftIO $ atomically $ writeTQueue queue (Just x)
-                                        go prod'
-                Left _            -> do liftIO $ atomically $ do
-                                          modifyTVar active (subtract 1)
-                                          writeTQueue queue Nothing
-
-    watch :: TVar Int -> TQueue (Maybe a) -> Producer a IO ()
-    watch active queue = do
-      res <- liftIO $ atomically $ do
-        e <- tryReadTQueue queue
-        case e of
-          Just e'  -> return (Just e')
-          Nothing  -> do n <- readTVar active
-                         if n > 0
-                           then Just <$> readTQueue queue
-                           else return Nothing
-      case res of
-        Just (Just x)  -> yield x >> watch active queue
-        Just Nothing   -> watch active queue
-        Nothing        -> return ()
-
-runProcess :: FilePath -> [String] -> Maybe FilePath
-           -> Producer Status IO ()
-runProcess cmd args cwd = do
-    (stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args cwd Nothing
-    interleave [ stderr >-> PP.map PutStderr
-               , stdout >-> PP.map PutStdout
-               ]
-    liftIO (waitForProcess phandle) >>= yield . JobDone
 
 localWorker :: Worker
-localWorker req = runProcess (jobCommand req) (jobArgs req) Nothing
+localWorker req = runProcess (jobCommand req) (jobArgs req) Nothing >-> PP.map PStatus
 
 sshWorker :: HostName -> FilePath -> Worker
 sshWorker host rootPath req = do
-    runProcess "ssh" ([host, "--", "cd", cwd, ";", jobCommand req]++jobArgs req) Nothing
+    runProcess "ssh" ([host, "--", "cd", cwd, ";", jobCommand req]++jobArgs req) Nothing >-> PP.map PStatus
   where
     cwd = rootPath ++ "/" ++ jobCwd req  -- HACK
 

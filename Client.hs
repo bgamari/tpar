@@ -9,6 +9,7 @@ import qualified Data.ByteString as BS
 import Pipes
 import Options.Applicative
 
+import ProcessPipe
 import Types
 import Util
        
@@ -93,8 +94,8 @@ runJob hostname port cmd args cwd env = do
         Right (Left err, _) -> left $ "handleResult: Stream error: "++err
         Right (Right x, prod') ->
           case x of
-            PutStdout a  -> liftIO (BS.hPut stdout a) >> go prod'
-            PutStderr a  -> liftIO (BS.hPut stderr a) >> go prod'
-            Error err    -> left err
-            JobDone code -> return code
+            PStatus (PutStdout a)  -> liftIO (BS.hPut stdout a) >> go prod'
+            PStatus (PutStderr a)  -> liftIO (BS.hPut stderr a) >> go prod'
+            PStatus (JobDone code) -> return code
+            Error err              -> left err
         Left _ -> left "handleResult: Failed to return exit code before end of stream"
