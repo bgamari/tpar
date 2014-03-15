@@ -9,7 +9,7 @@ import qualified Data.ByteString as BS
 import Pipes
 import Options.Applicative
 
-import ProcessPipe
+import JobClient
 import Types
 import Util
        
@@ -73,29 +73,6 @@ main' host port childArgs cwd env = do
     (cmd,args) <- case childArgs of
         cmd:args  -> right (cmd, args)
         _         -> left "No command given"
-    runJob host port cmd args cwd env
-    
-runJob :: HostName
-       -> PortID
-       -> String                  -- ^ Command name
-       -> [String]                -- ^ Arguments
-       -> FilePath                -- ^ Current working directory
-       -> Maybe [(String,String)] -- ^ Environment
-       -> EitherT String IO ExitCode
-runJob hostname port cmd args cwd env = do
-    h <- fmapLT show $ tryIO $ connectTo hostname port
-    liftIO $ hSetBuffering h NoBuffering
-    liftIO $ hPutBinary h $ QueueJob $ JobRequest cmd args cwd env
-    go $ fromHandleBinary h
-  where
-    go prod = do
-      status <- liftIO $ next prod 
-      case status of
-        Right (Left err, _) -> left $ "handleResult: Stream error: "++err
-        Right (Right x, prod') ->
-          case x of
-            PStatus (PutStdout a)  -> liftIO (BS.hPut stdout a) >> go prod'
-            PStatus (PutStderr a)  -> liftIO (BS.hPut stderr a) >> go prod'
-            PStatus (JobDone code) -> return code
-            Error err              -> left err
-        Left _ -> left "handleResult: Failed to return exit code before end of stream"
+    prod <- tryIO' $ enqueueJob host port cmd args cwd env
+    watchStatus prod
+

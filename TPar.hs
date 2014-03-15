@@ -1,11 +1,14 @@
+import Control.Monad (when)                
 import Control.Monad.IO.Class
 import Control.Error
 import Network
 import Options.Applicative
 import qualified Options.Applicative.Help as Help
 import System.IO
-import Util
+
+import JobClient
 import JobServer
+import Util
 import Types
 
 data WorkerOpts = WorkerOpts { workerHostName      :: String
@@ -19,6 +22,7 @@ data ServerOpts = ServerOpts { serverPort          :: PortID
 data EnqueueOpts = EnqueueOpts { enqueueHostName      :: String
                                , enqueuePort          :: PortID
                                , enqueueCommand       :: [String]
+                               , enqueueWatch         :: Bool
                                }
 
 data TPar = Worker WorkerOpts
@@ -63,6 +67,7 @@ tparParser =
         <$> hostOption idm
         <*> portOption (help "server port number")
         <*> arguments1 Just idm
+        <*> switch (short 'w' <> long "watch" <> help "Watch output of task")
 
 main :: IO ()
 main = do
@@ -73,10 +78,11 @@ main = do
         let workers = replicate (serverNLocalWorkers opts) localWorker
         liftIO $ start (serverPort opts) workers
       Enqueue opts -> do 
-        h <- fmapLT show $ tryIO $ connectTo (enqueueHostName opts) (enqueuePort opts)
-        liftIO $ hSetBuffering h NoBuffering
         let cmd:args = enqueueCommand opts
-        liftIO $ hPutBinary h $ QueueJob $ JobRequest cmd args "." Nothing
+        prod <- tryIO' $ enqueueJob (enqueueHostName opts) (enqueuePort opts) cmd args "." Nothing
+        when (enqueueWatch opts) $ do
+          code <- watchStatus prod
+          liftIO $ putStrLn $ "exited with code "++show code
       Help -> do
         liftIO $ putStrLn $ Help.parserHelpText (prefs idm) tpar
 
