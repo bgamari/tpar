@@ -82,7 +82,7 @@ handleRemoteWorker jobQueue h = do
     tryIO' $ hPutBinary h (jobRequest job)
     tryIO' $ runEffect $ fromHandleBinary h >-> handleError >-> jobConn job
   where
-    handleError = do
+    handleError = forever $ do
       res <- await
       case res of
         Left err -> yield $ Error err
