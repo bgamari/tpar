@@ -25,7 +25,7 @@ data Opts = Opts { port      :: PortNumber
 opts :: Parser Opts
 opts = Opts
     <$> nullOption ( short 'p' <> long "port"
-                  <> value 2228
+                  <> value 5757
                   <> reader (fmap fromIntegral . auto)
                   <> help "job server port"
                    )
