@@ -54,16 +54,16 @@ listener port jobQueue = do
     void $ forever $ printEitherT $ do
         (h,_,_) <- liftIO $ accept listenSock
         liftIO $ hSetBuffering h NoBuffering
-        res <- hGetBinary h
+        res <- liftIO $ runEitherT $ hGetBinary h
         case res of
           Right (QueueJob jobReq) ->
             liftIO $ atomically $ writeTQueue jobQueue (Job (toHandleBinary h) jobReq)
           Right WorkerReady       ->
             liftIO $ void $ async $ runEitherT $ handleRemoteWorker jobQueue h
-          Left  err    -> do
+          Left err                -> do
+            liftIO $ errLn $ "Error in request: "++err
             tryIO' $ hPutBinary h $ Error err
-            liftIO $ hClose h
-            liftIO $ putStr $ "Error in request: "++err
+            tryIO' $ hClose h
 
 runWorker :: TQueue Job -> Worker -> EitherT String IO ()
 runWorker jobQueue worker = forever $ do
