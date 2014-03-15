@@ -17,7 +17,7 @@ data Opts = Opts { port      :: PortNumber
                  , host      :: String
                  -- , keepEnv   :: Bool
                  -- , hideEnv   :: [String]
-                   -- * Strip this prefix path when determining current working directory
+                   -- | Strip this prefix path when determining current working directory
                  , stripPath :: FilePath
                  , childArgs :: [String]
                  }
