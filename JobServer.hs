@@ -92,5 +92,6 @@ remoteWorker :: HostName -> PortID -> EitherT String IO ()
 remoteWorker host port = forever $ do
     h <- tryIO' $ connectTo host port
     liftIO $ hSetBuffering h NoBuffering
+    tryIO' $ hPutBinary h WorkerReady
     jobReq <- hGetBinary h
     liftIO $ runEffect $ localWorker jobReq >-> toHandleBinary h
