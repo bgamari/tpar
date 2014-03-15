@@ -1,5 +1,6 @@
 module Util ( hGetBinary, hPutBinary
             , toHandleBinary, fromHandleBinary
+            , tryIO'
             ) where
 
 import Data.Word
@@ -23,15 +24,18 @@ runGetError get bs = fmapRT third $ fmapLT third $ hoistEither $ runGetOrFail ge
 describe :: Monad m => String -> EitherT String m a -> EitherT String m a
 describe e = fmapLT ((e++": ")++)
 
+tryIO' :: IO a -> EitherT String IO a
+tryIO' = fmapLT show . tryIO
+
 hGetBinary :: Binary a => Handle -> EitherT String IO a
 hGetBinary h = do
-    n <- liftIO $ LBS.hGet h 8
-    len <- describe "getting header" $ flip runGetError n $ do
+    n <- describe "getting header" $ tryIO' $ LBS.hGet h 8
+    len <- describe "parsing header" $ flip runGetError n $ do
         magic <- getWord32le
         when (magic /= magicNumber) $ fail "Invalid magic number"
         getWord32le
-    body <- liftIO $ LBS.hGet h (fromIntegral len)
-    describe "getting body" $ runGetError get body
+    body <- describe "getting body" $ tryIO' $ LBS.hGet h (fromIntegral len)
+    describe "parsing body" $ runGetError get body
 
 hPutBinary :: Binary a => Handle -> a -> IO ()
 hPutBinary h a = do

@@ -45,39 +45,42 @@ data Job = Job { jobConn    :: Consumer Status IO ()
                , jobRequest :: JobRequest
                }
 
+printEitherT :: EitherT String IO () -> IO ()
+printEitherT action = runEitherT action >>= either errLn return
+
 listener :: PortID -> TQueue Job -> IO ()
 listener port jobQueue = do
     listenSock <- listenOn port 
-    forever $ do
-        (h,_,_) <- accept listenSock
-        hSetBuffering h NoBuffering
-        res <- runEitherT $ hGetBinary h
+    void $ forever $ printEitherT $ do
+        (h,_,_) <- liftIO $ accept listenSock
+        liftIO $ hSetBuffering h NoBuffering
+        res <- hGetBinary h
         case res of
           Right (QueueJob jobReq) ->
-            atomically $ writeTQueue jobQueue (Job (toHandleBinary h) jobReq)
+            liftIO $ atomically $ writeTQueue jobQueue (Job (toHandleBinary h) jobReq)
           Right WorkerReady       ->
-            void $ async $ handleRemoteWorker jobQueue h
+            liftIO $ void $ async $ runEitherT $ handleRemoteWorker jobQueue h
           Left  err    -> do
-            hPutBinary h $ Error err
-            hClose h
-            putStr $ "Error in request: "++err
+            tryIO' $ hPutBinary h $ Error err
+            liftIO $ hClose h
+            liftIO $ putStr $ "Error in request: "++err
 
-runWorker :: TQueue Job -> Worker -> IO ()
+runWorker :: TQueue Job -> Worker -> EitherT String IO ()
 runWorker jobQueue worker = forever $ do
-    job <- atomically (readTQueue jobQueue)
-    runEffect $ worker (jobRequest job) >-> jobConn job
+    job <- liftIO $ atomically (readTQueue jobQueue)
+    tryIO' $ runEffect $ worker (jobRequest job) >-> jobConn job
     
 start :: PortID -> [Worker] -> IO ()
 start port workers = do
     jobQueue <- newTQueueIO
-    mapM_ (async . runWorker jobQueue) workers 
+    mapM_ (async . runEitherT . runWorker jobQueue) workers 
     listener port jobQueue
 
-handleRemoteWorker :: TQueue Job -> Handle -> IO ()
+handleRemoteWorker :: TQueue Job -> Handle -> EitherT String IO ()
 handleRemoteWorker jobQueue h = do
-    job <- atomically (readTQueue jobQueue)
-    hPutBinary h (jobRequest job)
-    runEffect $ fromHandleBinary h >-> handleError >-> jobConn job
+    job <- liftIO $ atomically (readTQueue jobQueue)
+    tryIO' $ hPutBinary h (jobRequest job)
+    tryIO' $ runEffect $ fromHandleBinary h >-> handleError >-> jobConn job
   where
     handleError = do
       res <- await
@@ -87,7 +90,7 @@ handleRemoteWorker jobQueue h = do
     
 remoteWorker :: HostName -> PortID -> EitherT String IO ()
 remoteWorker host port = forever $ do
-    h <- fmapLT show $ tryIO $ connectTo host port
+    h <- tryIO' $ connectTo host port
     liftIO $ hSetBuffering h NoBuffering
     jobReq <- hGetBinary h
     liftIO $ runEffect $ localWorker jobReq >-> toHandleBinary h
