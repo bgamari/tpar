@@ -1,0 +1,35 @@
+# tpar - simple, parallel job scheduling
+
+tpar is a simple tool for job scheduling. Say you have a directory
+full of files which need processing,
+
+    \$ ls
+    file1    file2     file3     file4    file5
+    ...
+
+Usually one could use a `bash` for loop,
+
+    \$ for f in *; do process \$f; done;
+
+But if `process` is a long-running task and you have many cores at
+your disposal, it would be nice to speed things up a bit,
+
+    \$ tpar server -N8
+    \$ for f in *; do tpar enqueue -- process \$f; done;
+
+If you have multiple machines,
+
+    \$ for m in worker1 worker2 worker3; do
+          ssh $m -- tpar worker -H`hostname`;
+       done
+
+## Overview
+
+ consists of a queue server, a set of workers, and 
+`tpar` has three subcommands,
+
+  * `tpar server` starts a local queue server.
+  * `tpar enqueue \$cmd` enqueues a job in the given queue
+  * `tpar worker -H\$host -p\$port` starts a worker associated with
+    the given queue
+    
