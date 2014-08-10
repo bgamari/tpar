@@ -1,4 +1,4 @@
-# tpar - simple, parallel job scheduling
+# tpar — simple, parallel job scheduling
 
 tpar is a simple tool for job scheduling. Say you have a directory
 full of files which need processing,
@@ -17,7 +17,8 @@ your disposal, it would be nice to speed things up a bit,
     \$ tpar server -N8
     \$ for f in *; do tpar enqueue -- process \$f; done;
 
-If you have multiple machines,
+If you have multiple machines with the data mounted over, say, NFS,
+they can also help with churning through the queue,
 
     \$ for m in worker1 worker2 worker3; do
           ssh $m -- tpar worker -H`hostname`;
