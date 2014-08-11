@@ -73,7 +73,7 @@ tparParser =
       EnqueueOpts
         <$> hostOption idm
         <*> portOption (help "server port number")
-        <*> arguments1 Just idm
+        <*> some (argument Just idm)
         <*> switch (short 'w' <> long "watch" <> help "Watch output of task")
 
 main :: IO ()
@@ -91,7 +91,7 @@ main = do
           code <- watchStatus prod
           liftIO $ putStrLn $ "exited with code "++show code
       Help -> do
-        liftIO $ putStrLn $ Help.parserHelpText (prefs idm) tpar
+        liftIO $ print $ Help.helpText $ Help.parserHelp (prefs idm) tparParser
 
     case res of
       Left err -> putStrLn $ "error: "++err
