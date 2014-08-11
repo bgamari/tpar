@@ -12,7 +12,7 @@ file1    file2     file3     file4    file5
 Usually one could use a `bash` for loop,
 
 ```bash
-$ for f in *; do process \$f; done;
+$ for f in *; do process $f; done;
 ```
 
 But if `process` is a long-running task and you have many cores at
@@ -20,7 +20,7 @@ your disposal, it would be nice to speed things up a bit,
 
 ```bash
 $ tpar server -N8
-$ for f in *; do tpar enqueue -- process \$f; done;
+$ for f in *; do tpar enqueue -- process $f; done;
 ```
 
 If you have multiple machines with the data mounted over, say, NFS,
