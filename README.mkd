@@ -1,7 +1,7 @@
-# tpar — simple, parallel job scheduling
+# tpar — simple parallel job scheduling
 
-tpar is a simple tool for job scheduling. Say you have a directory
-full of files which need processing,
+tpar is a simple tool for concurrent job scheduling. Say you have a
+directory full of files which need processing,
 
 ```bash
 $ ls
