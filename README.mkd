@@ -38,7 +38,7 @@ done
 `tpar` has three subcommands,
 
   * `tpar server` starts a local queue server.
-  * `tpar enqueue \$cmd` enqueues a job in the given queue
-  * `tpar worker -H\$host -p\$port` starts a worker associated with
+  * `tpar enqueue $cmd` enqueues a job in the given queue
+  * `tpar worker -H $host -p $port` starts a worker associated with
     the given queue
     
