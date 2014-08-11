@@ -3,26 +3,34 @@
 tpar is a simple tool for job scheduling. Say you have a directory
 full of files which need processing,
 
-    \$ ls
-    file1    file2     file3     file4    file5
-    ...
+```bash
+$ ls
+file1    file2     file3     file4    file5
+...
+```
 
 Usually one could use a `bash` for loop,
 
-    \$ for f in *; do process \$f; done;
+```bash
+$ for f in *; do process \$f; done;
+```
 
 But if `process` is a long-running task and you have many cores at
 your disposal, it would be nice to speed things up a bit,
 
-    \$ tpar server -N8
-    \$ for f in *; do tpar enqueue -- process \$f; done;
+```bash
+$ tpar server -N8
+$ for f in *; do tpar enqueue -- process \$f; done;
+```
 
 If you have multiple machines with the data mounted over, say, NFS,
 they can also help with churning through the queue,
 
-    \$ for m in worker1 worker2 worker3; do
-          ssh $m -- tpar worker -H`hostname`;
-       done
+```bash
+$ for m in worker1 worker2 worker3; do
+   ssh $m -- tpar worker -H`hostname`;
+done
+```
 
 ## Overview
 
