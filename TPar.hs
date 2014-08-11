@@ -42,15 +42,22 @@ hostOption m =
     strOption ( short 'H' <> long "host" <> value "localhost" <> help "server host name" )
            
 tpar :: ParserInfo TPar
-tpar = info tparParser fullDesc
+tpar = info (helper <*> tparParser)
+     $ fullDesc
+    <> progDesc "Start queues, add workers, and enqueue tasks"
+    <> header "tpar - simple distributed task queuing"
 
 tparParser :: Parser TPar
 tparParser =
     subparser
-      $ command "server"  (info (Server <$> server)   $ progDesc "Start a server")
-     <> command "worker"  (info (Worker <$> worker)   $ progDesc "Start a worker")
-     <> command "enqueue" (info (Enqueue <$> enqueue) $ progDesc "Enqueue a job")
-     <> command "help"    (info (pure Help)           $ progDesc "Display help message")
+      $ command "server"  ( info (Server <$> server)
+                          $ fullDesc <> progDesc "Start a server")
+     <> command "worker"  ( info (Worker <$> worker)
+                          $ fullDesc <> progDesc "Start a worker")
+     <> command "enqueue" ( info (Enqueue <$> enqueue)
+                          $ fullDesc <> progDesc "Enqueue a job")
+     <> command "help"    ( info (pure Help)
+                          $ fullDesc <> progDesc "Display help message")
   where
     worker =
       WorkerOpts
