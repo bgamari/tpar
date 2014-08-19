@@ -28,8 +28,8 @@ they can also help with churning through the queue,
 
 ```bash
 $ for m in worker1 worker2 worker3; do
-   ssh $m -- tpar worker -H`hostname`;
-done
+>   ssh $m -- tpar worker -H`hostname`;
+> done
 ```
 
 ## Overview
