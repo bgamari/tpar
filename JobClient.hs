@@ -4,16 +4,16 @@ module JobClient ( enqueueJob
 
 import Network
 import Control.Monad.IO.Class
-import Control.Error                
+import Control.Error
 import qualified Data.ByteString as BS
 import System.IO
 import System.Exit
 import Pipes
-       
+
 import ProcessPipe
 import Types
 import Util
-                
+
 enqueueJob :: HostName
            -> PortID
            -> String                  -- ^ Command name
@@ -31,7 +31,7 @@ watchStatus :: Producer (Either String Status) IO () -> EitherT String IO ExitCo
 watchStatus = go
   where
     go prod = do
-      status <- liftIO $ next prod 
+      status <- liftIO $ next prod
       case status of
         Right (Left err, _) -> left $ "handleResult: Stream error: "++err
         Right (Right x, prod') ->

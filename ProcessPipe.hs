@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric #-}                
+{-# LANGUAGE DeriveGeneric #-}
 
 module ProcessPipe ( ProcessStatus(..)
                    , runProcess
@@ -7,7 +7,6 @@ module ProcessPipe ( ProcessStatus(..)
 import Control.Applicative
 import qualified Pipes.Prelude as PP
 import qualified Pipes.ByteString as PBS
-import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
 
 import Pipes

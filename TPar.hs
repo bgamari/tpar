@@ -1,4 +1,4 @@
-import Control.Monad (when)                
+import Control.Monad (when)
 import Control.Monad.IO.Class
 import Control.Error
 import Network
@@ -27,18 +27,18 @@ data EnqueueOpts = EnqueueOpts { enqueueHostName      :: String
 data TPar = Worker WorkerOpts
           | Server ServerOpts
           | Enqueue EnqueueOpts
-          
+
 portOption :: Mod OptionFields PortID -> Parser PortID
 portOption m =
     option (PortNumber . fromIntegral <$> auto)
            ( short 'p' <> long "port"
           <> value (PortNumber 5757) <> m
            )
-           
+
 hostOption :: Mod OptionFields String -> Parser String
-hostOption m = 
+hostOption m =
     strOption ( short 'H' <> long "host" <> value "localhost" <> help "server host name" )
-           
+
 tpar :: ParserInfo TPar
 tpar = info (helper <*> tparParser)
      $ fullDesc
@@ -65,7 +65,7 @@ tparParser =
         <*> option auto ( short 'N' <> long "workers" <> value 0
                        <> help "number of local workers to start"
                         )
-    enqueue = 
+    enqueue =
       EnqueueOpts
         <$> hostOption idm
         <*> portOption (help "server port number")
@@ -80,7 +80,7 @@ main = do
       Server opts -> do
         let workers = replicate (serverNLocalWorkers opts) localWorker
         liftIO $ start (serverPort opts) workers
-      Enqueue opts -> do 
+      Enqueue opts -> do
         let cmd:args = enqueueCommand opts
         prod <- tryIO' $ enqueueJob (enqueueHostName opts) (enqueuePort opts) cmd args "." Nothing
         when (enqueueWatch opts) $ do

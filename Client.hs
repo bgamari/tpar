@@ -12,7 +12,7 @@ import Options.Applicative
 import JobClient
 import Types
 import Util
-       
+
 data Opts = Opts { port      :: PortNumber
                  , host      :: String
                  -- , keepEnv   :: Bool
@@ -75,4 +75,3 @@ main' host port childArgs cwd env = do
         _         -> left "No command given"
     prod <- tryIO' $ enqueueJob host port cmd args cwd env
     watchStatus prod
-

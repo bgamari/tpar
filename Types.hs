@@ -1,7 +1,7 @@
-{-# LANGUAGE DeriveGeneric #-}                
+{-# LANGUAGE DeriveGeneric #-}
 
 module Types where
-                
+
 import Control.Applicative
 import Data.Binary
 import GHC.Generics

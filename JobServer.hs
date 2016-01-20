@@ -9,7 +9,7 @@ module JobServer ( -- * Workers
                  , PortID(..)
                  , PortNumber
                  ) where
-                
+
 import Control.Error
 import Control.Applicative
 import Control.Monad (void)
@@ -50,7 +50,7 @@ printEitherT action = runEitherT action >>= either errLn return
 
 listener :: PortID -> TQueue Job -> IO ()
 listener port jobQueue = do
-    listenSock <- listenOn port 
+    listenSock <- listenOn port
     void $ forever $ printEitherT $ do
         (h,_,_) <- liftIO $ accept listenSock
         liftIO $ hSetBuffering h NoBuffering
@@ -69,11 +69,11 @@ runWorker :: TQueue Job -> Worker -> IO ()
 runWorker jobQueue worker = forever $ runEitherT $ do
     job <- liftIO $ atomically (readTQueue jobQueue)
     tryIO' $ runEffect $ worker (jobRequest job) >-> jobConn job
-    
+
 start :: PortID -> [Worker] -> IO ()
 start port workers = do
     jobQueue <- newTQueueIO
-    mapM_ (async . runWorker jobQueue) workers 
+    mapM_ (async . runWorker jobQueue) workers
     listener port jobQueue
 
 handleRemoteWorker :: TQueue Job -> Handle -> EitherT String IO ()
@@ -87,7 +87,7 @@ handleRemoteWorker jobQueue h = do
       case res of
         Left err -> yield $ Error err
         Right a  -> yield a
-    
+
 remoteWorker :: HostName -> PortID -> EitherT String IO ()
 remoteWorker host port = forever $ do
     h <- tryIO' $ connectTo host port
