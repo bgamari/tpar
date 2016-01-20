@@ -3,7 +3,6 @@ import Control.Monad.IO.Class
 import Control.Error
 import Network
 import Options.Applicative
-import qualified Options.Applicative.Help as Help
 import System.IO
 
 import JobClient
@@ -28,14 +27,13 @@ data EnqueueOpts = EnqueueOpts { enqueueHostName      :: String
 data TPar = Worker WorkerOpts
           | Server ServerOpts
           | Enqueue EnqueueOpts
-          | Help
           
 portOption :: Mod OptionFields PortID -> Parser PortID
 portOption m =
-    nullOption ( short 'p' <> long "port"
-              <> value (PortNumber 5757)
-              <> reader (fmap (PortNumber . fromIntegral) . auto) <> m
-               )
+    option (PortNumber . fromIntegral <$> auto)
+           ( short 'p' <> long "port"
+          <> value (PortNumber 5757) <> m
+           )
            
 hostOption :: Mod OptionFields String -> Parser String
 hostOption m = 
@@ -56,8 +54,6 @@ tparParser =
                           $ fullDesc <> progDesc "Start a worker")
      <> command "enqueue" ( info (Enqueue <$> enqueue)
                           $ fullDesc <> progDesc "Enqueue a job")
-     <> command "help"    ( info (pure Help)
-                          $ fullDesc <> progDesc "Display help message")
   where
     worker =
       WorkerOpts
@@ -66,14 +62,14 @@ tparParser =
     server =
       ServerOpts
         <$> portOption (help "server port number")
-        <*> option ( short 'N' <> long "workers" <> value 0
-                  <> help "number of local workers to start"
-                   )
+        <*> option auto ( short 'N' <> long "workers" <> value 0
+                       <> help "number of local workers to start"
+                        )
     enqueue = 
       EnqueueOpts
         <$> hostOption idm
         <*> portOption (help "server port number")
-        <*> some (argument Just idm)
+        <*> some (argument str idm)
         <*> switch (short 'w' <> long "watch" <> help "Watch output of task")
 
 main :: IO ()
@@ -90,8 +86,6 @@ main = do
         when (enqueueWatch opts) $ do
           code <- watchStatus prod
           liftIO $ putStrLn $ "exited with code "++show code
-      Help -> do
-        liftIO $ print $ Help.helpText $ Help.parserHelp (prefs idm) tparParser
 
     case res of
       Left err -> putStrLn $ "error: "++err
