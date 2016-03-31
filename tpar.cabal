@@ -1,8 +1,8 @@
-name:                job-server
+name:                tpar
 version:             0.1.0.0
 synopsis:            simple, parallel job scheduling
 -- description:         
-homepage:            http://github.com/bgamari/job-server
+homepage:            http://github.com/bgamari/tpar
 license:             BSD3
 license-file:        LICENSE
 author:              Ben Gamari
@@ -27,6 +27,6 @@ executable tpar
                        process >=1.1 && <1.3,
                        pipes >=4.0 && <4.2,
                        pipes-bytestring >=2.0 && <2.2,
-                       optparse-applicative >= 0.10 && <0.12
+                       optparse-applicative >= 0.10 && <0.13
   default-language:    Haskell2010
 
