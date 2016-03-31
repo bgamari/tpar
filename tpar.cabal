@@ -27,6 +27,7 @@ executable tpar
                        process >=1.1 && <1.5,
                        pipes >=4.0 && <4.2,
                        pipes-bytestring >=2.0 && <2.2,
-                       optparse-applicative >= 0.10 && <0.13
+                       optparse-applicative >= 0.10 && <0.13,
+                       heaps >= 0.3 && < 0.4
   default-language:    Haskell2010
 

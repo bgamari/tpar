@@ -8,6 +8,7 @@ import Control.Concurrent (threadDelay)
 import JobClient
 import JobServer
 import Util
+import Types
 
 portOption :: Mod OptionFields PortID -> Parser PortID
 portOption m =
@@ -71,15 +72,27 @@ modeEnqueue =
     run <$> hostOption idm
         <*> portOption (help "server port number")
         <*> switch (short 'w' <> long "watch" <> help "Watch output of task")
+        <*> option (JobName <$> str)
+                   (short 'n' <> long "name" <> value (JobName "unnamed-job")
+                    <> help "Set the job's name")
+        <*> option (Priority <$> auto)
+                   (short 'p' <> long "priority" <> value (Priority 0)
+                    <> help "Set the job's priority")
         <*> some (argument str idm)
   where
-    run serverHost serverPort watch (cmd:args) = do
-        prod <- tryIO' $ enqueueJob serverHost serverPort cmd args "." Nothing
+    run serverHost serverPort watch name priority (cmd:args) = do
+        let jobReq = JobRequest { jobName     = name
+                                , jobPriority = priority
+                                , jobCommand  = cmd
+                                , jobArgs     = args
+                                , jobCwd      = "."
+                                , jobEnv      = Nothing
+                                }
+        prod <- tryIO' $ enqueueJob serverHost serverPort jobReq
         when watch $ do
           code <- watchStatus prod
           liftIO $ putStrLn $ "exited with code "++show code
-    run _ _ _ _ = do
-        fail "Expected command line"
+    run _ _ _ _ _ _ = fail "Expected command line"
 
 main :: IO ()
 main = do

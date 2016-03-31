@@ -16,15 +16,12 @@ import Util
 
 enqueueJob :: HostName
            -> PortID
-           -> String                  -- ^ Command name
-           -> [String]                -- ^ Arguments
-           -> FilePath                -- ^ Current working directory
-           -> Maybe [(String,String)] -- ^ Environment
+           -> JobRequest
            -> IO (Producer (Either String Status) IO ())
-enqueueJob hostname port cmd args cwd env = do
+enqueueJob hostname port req = do
     h <- connectTo hostname port
     hSetBuffering h NoBuffering
-    hPutBinary h $ QueueJob $ JobRequest cmd args cwd env
+    hPutBinary h $ QueueJob req
     return $ fromHandleBinary h
 
 watchStatus :: Producer (Either String Status) IO () -> ExceptT String IO ExitCode

@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Types where
 
@@ -15,17 +16,22 @@ data Request = QueueJob JobRequest
 
 instance Binary Request
 
-data JobRequest = JobRequest { jobCommand :: FilePath
-                             , jobArgs    :: [String]
-                             , jobCwd     :: FilePath
-                             , jobEnv     :: Maybe [(String, String)]
+newtype JobName = JobName String
+                deriving (Show, Eq, Ord, Binary)
+
+data JobRequest = JobRequest { jobName     :: JobName
+                             , jobPriority :: Priority
+                             , jobCommand  :: FilePath
+                             , jobArgs     :: [String]
+                             , jobCwd      :: FilePath
+                             , jobEnv      :: Maybe [(String, String)]
                              }
                 deriving (Show, Generic)
 
-instance Binary JobRequest where
-    get = JobRequest <$> get <*> get <*> get <*> get
-    put (JobRequest cmd args cwd env) =
-        put cmd >> put args >> put cwd >> put env
+instance Binary JobRequest
+
+newtype Priority = Priority Int
+                 deriving (Eq, Ord, Show, Binary)
 
 data Status = PStatus ProcessStatus
             | Error   String
