@@ -23,11 +23,14 @@ executable tpar
                        transformers >=0.3 && <0.6,
                        async >=2.0 && <2.2,
                        stm >=2.4 && <2.5,
-                       network >=2.4 && <2.7,
                        process >=1.1 && <1.5,
                        pipes >=4.0 && <4.2,
                        pipes-bytestring >=2.0 && <2.2,
+                       pipes-concurrency,
                        optparse-applicative >= 0.10 && <0.13,
+                       distributed-process >= 0.6 && <0.7,
+                       network-transport-tcp >= 0.4,
+                       network >= 2.4 && < 2.7,
                        heaps >= 0.3 && < 0.4
   default-language:    Haskell2010
-
+  ghc-options:         -threaded

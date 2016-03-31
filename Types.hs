@@ -4,17 +4,31 @@
 module Types where
 
 import Control.Applicative
+import System.Exit
+
 import Data.Binary
 import GHC.Generics
+import Control.Distributed.Process
+
 import ProcessPipe
+import Rpc
+import RemoteStream
 
--- | This is the first thing that will be sent over a new
--- request socket
-data Request = QueueJob JobRequest
-             | WorkerReady
-             deriving (Show, Generic)
+data Job = Job { jobSink    :: Maybe (SinkPort ProcessOutput ExitCode)
+               , jobRequest :: JobRequest
+               }
+         deriving (Generic)
 
-instance Binary Request
+instance Binary Job
+
+data ServerIface =
+    ServerIface { enqueueJob  :: RpcSendPort (JobRequest, Maybe (SinkPort ProcessOutput ExitCode)) ()
+                , requestJob  :: RpcSendPort () Job
+                , getQueueStatus :: RpcSendPort () [JobRequest]
+                }
+    deriving (Generic)
+
+instance Binary ServerIface
 
 newtype JobName = JobName String
                 deriving (Show, Eq, Ord, Binary)
@@ -32,9 +46,3 @@ instance Binary JobRequest
 
 newtype Priority = Priority Int
                  deriving (Eq, Ord, Show, Binary)
-
-data Status = PStatus ProcessStatus
-            | Error   String
-            deriving (Show, Generic)
-
-instance Binary Status

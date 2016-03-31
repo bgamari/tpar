@@ -1,27 +1,30 @@
-import Control.Monad (when, forever)
+import Control.Monad (when, forever, replicateM_)
 import Control.Monad.IO.Class
 import Control.Error
-import Network
+import qualified Network.Transport.TCP as TCP
+import Network.Socket (ServiceName, HostName)
 import Options.Applicative
 import Control.Concurrent (threadDelay)
+import Control.Distributed.Process
+import Control.Distributed.Process.Internal.Types (NodeId(..))
+import Control.Distributed.Process.Node
 
 import JobClient
 import JobServer
-import Util
 import Types
 
-portOption :: Mod OptionFields PortID -> Parser PortID
+portOption :: Mod OptionFields ServiceName -> Parser ServiceName
 portOption m =
-    option (PortNumber . fromIntegral <$> auto)
+    option str
            ( short 'p' <> long "port"
-          <> value (PortNumber 5757) <> m
+          <> value "5757" <> m
            )
 
-hostOption :: Mod OptionFields String -> Parser String
+hostOption :: Mod OptionFields String -> Parser HostName
 hostOption m =
     strOption ( short 'H' <> long "host" <> value "localhost" <> help "server host name" )
 
-type Mode = ExceptT String IO ()
+type Mode = IO ()
 
 tpar :: ParserInfo Mode
 tpar = info (helper <*> tparParser)
@@ -39,6 +42,25 @@ tparParser =
      <> command "enqueue" ( info modeEnqueue
                           $ fullDesc <> progDesc "Enqueue a job")
 
+withServer' :: HostName -> ServiceName
+           -> (ServerIface -> Process a) -> Process a
+withServer' host port action = do
+    let nid :: NodeId
+        nid = NodeId (TCP.encodeEndPointAddress host port 0)
+    (sq, rq) <- newChan :: Process (SendPort ServerIface, ReceivePort ServerIface)
+    nsendRemote nid "tpar" sq
+    say $ "sent to "++show nid
+    iface <- receiveChan rq
+    say "have resp"
+    action iface
+
+withServer :: HostName -> ServiceName
+           -> (ServerIface -> Process ()) -> IO ()
+withServer host port action = do
+    Right transport <- TCP.createTransport "localhost" "0" TCP.defaultTCPParameters
+    node <- newLocalNode transport initRemoteTable
+    runProcess node $ withServer' host port action
+
 modeWorker :: Parser Mode
 modeWorker =
     run <$> hostOption idm
@@ -47,9 +69,10 @@ modeWorker =
                    ( short 'r' <> long "reconnect" <> metavar "SECONDS"
                      <> help "attempt to reconnect when server vanishes (with optional retry period); otherwise terminates on server vanishing"
                    )
+        <*  helper
   where
-    run serverHost serverPort reconnect = do
-        perhapsRepeat $ remoteWorker serverHost serverPort
+    run serverHost serverPort reconnect =
+        perhapsRepeat $ withServer serverHost serverPort runRemoteWorker
       where
         perhapsRepeat action
           | Just period <- reconnect =
@@ -62,10 +85,15 @@ modeServer =
         <*> option auto ( short 'N' <> long "workers" <> value 0
                        <> help "number of local workers to start"
                         )
+        <*  helper
   where
     run serverPort nLocalWorkers = do
-        let workers = replicate nLocalWorkers localWorker
-        liftIO $ start serverPort workers
+        Right transport <- TCP.createTransport "localhost" serverPort TCP.defaultTCPParameters
+        node <- newLocalNode transport initRemoteTable
+        runProcess node $ do
+            iface <- runServer
+            replicateM_ nLocalWorkers $ runRemoteWorker iface
+            liftIO $ forever $ threadDelay maxBound
 
 modeEnqueue :: Parser Mode
 modeEnqueue =
@@ -79,25 +107,28 @@ modeEnqueue =
                    (short 'p' <> long "priority" <> value (Priority 0)
                     <> help "Set the job's priority")
         <*> some (argument str idm)
+        <*  helper
   where
-    run serverHost serverPort watch name priority (cmd:args) = do
-        let jobReq = JobRequest { jobName     = name
-                                , jobPriority = priority
-                                , jobCommand  = cmd
-                                , jobArgs     = args
-                                , jobCwd      = "."
-                                , jobEnv      = Nothing
-                                }
-        prod <- tryIO' $ enqueueJob serverHost serverPort jobReq
-        when watch $ do
-          code <- watchStatus prod
-          liftIO $ putStrLn $ "exited with code "++show code
+    run serverHost serverPort watch name priority (cmd:args) =
+        withServer serverHost serverPort $ \iface -> do
+            let jobReq = JobRequest { jobName     = name
+                                    , jobPriority = priority
+                                    , jobCommand  = cmd
+                                    , jobArgs     = args
+                                    , jobCwd      = "."
+                                    , jobEnv      = Nothing
+                                    }
+            prod <- watchJob iface jobReq
+            say "watching job"
+            when watch $ do
+              code <- watchStatus prod
+              liftIO $ putStrLn $ "exited with code "++show code
     run _ _ _ _ _ _ = fail "Expected command line"
 
 main :: IO ()
 main = do
     run <- execParser tpar
-    res <- runExceptT run
+    res <- runExceptT $ tryIO run
     case res of
-      Left err -> putStrLn $ "error: "++err
+      Left err -> putStrLn $ "error: "++show err
       Right () -> return ()

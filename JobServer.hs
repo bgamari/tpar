@@ -1,13 +1,13 @@
+{-# LANGUAGE RecordWildCards #-}
+
 module JobServer ( -- * Workers
                    Worker
                  , localWorker
                  , sshWorker
-                 , remoteWorker
+                 , runRemoteWorker
                    -- * Running
-                 , start
-                   -- * Convenient re-exports
-                 , PortID(..)
-                 , PortNumber
+                 , server
+                 , runServer
                  ) where
 
 import Control.Error
@@ -16,55 +16,81 @@ import Control.Monad (void)
 import Data.Binary
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Network
+import Data.Foldable
 import Control.Monad (forever, filterM)
 import qualified Data.Heap as H
+import Control.Distributed.Process
 
 import System.IO (Handle, hClose, hSetBuffering, BufferMode(NoBuffering))
-import Control.Concurrent.Async
+import System.Exit
 import Control.Concurrent.STM
 
 import Pipes
 import qualified Pipes.Prelude as PP
 
+import Rpc
+import RemoteStream
 import ProcessPipe
 import Types
-import Util
 
-type Worker = JobRequest -> Producer Status IO ()
+type Worker = JobRequest -> Producer ProcessOutput Process ExitCode
 
 localWorker :: Worker
-localWorker req = runProcess (jobCommand req) (jobArgs req) Nothing >-> PP.map PStatus
+localWorker req = runProcess (jobCommand req) (jobArgs req) Nothing
 
-sshWorker :: HostName -> FilePath -> Worker
+sshWorker :: String -> FilePath -> Worker
 sshWorker host rootPath req = do
-    runProcess "ssh" ([host, "--", "cd", cwd, ";", jobCommand req]++jobArgs req) Nothing >-> PP.map PStatus
+    runProcess "ssh" ([host, "--", "cd", cwd, ";", jobCommand req]++jobArgs req) Nothing
   where
     cwd = rootPath ++ "/" ++ jobCwd req  -- HACK
 
-data Job = Job { jobConn    :: Consumer Status IO ()
-               , jobRequest :: JobRequest
-               }
+runRemoteWorker :: ServerIface -> Process ()
+runRemoteWorker (ServerIface {..}) = forever $ do
+    job <- callRpc requestJob ()
+    runJobWithWorker job localWorker
 
-printExcept :: ExceptT String IO () -> IO ()
-printExcept action = runExceptT action >>= either errLn return
+printExcept :: MonadIO m => ExceptT String m () -> m ()
+printExcept action = runExceptT action >>= either (liftIO . errLn) return
 
-listener :: PortID -> JobQueue -> IO ()
-listener port jobQueue = do
-    listenSock <- listenOn port
-    void $ forever $ printExcept $ do
-        (h,_,_) <- liftIO $ accept listenSock
-        liftIO $ hSetBuffering h NoBuffering
-        res <- liftIO $ runExceptT $ hGetBinary h
-        case res of
-          Right (QueueJob jobReq) ->
-            liftIO $ pushJob jobQueue (Job (toHandleBinary h) jobReq)
-          Right WorkerReady       ->
-            liftIO $ void $ async $ runExceptT $ handleRemoteWorker jobQueue h
-          Left err                -> do
-            liftIO $ errLn $ "Error in request: "++err
-            tryIO' $ hPutBinary h $ Error err
-            tryIO' $ hClose h
+runServer :: Process ServerIface
+runServer = do
+    q <- liftIO $ newJobQueue
+    (serverPid, iface) <- server q
+    announce <- spawnLocal $ forever $ do
+        say "waiting"
+        x <- expect :: Process (SendPort ServerIface)
+        say "have req"
+        sendChan x iface
+    register "tpar" announce
+    return iface
+
+server :: JobQueue -> Process (ProcessId, ServerIface)
+server jobQueue = do
+    (enqueueJob, enqueueJobRp) <- newRpc
+    (requestJob, requestJobRp) <- newRpc
+    (getQueueStatus, getQueueStatusRp) <- newRpc
+
+    pid <- spawnLocal $ forever $ do
+        say "server waiitng"
+        serverPid <- getSelfPid
+        receiveWait
+            [ matchRpc enqueueJobRp $ \(jobReq, dataStream) -> do
+                  say "enqueue"
+                  liftIO $ pushJob jobQueue (Job dataStream jobReq)
+                  return ((), ())
+            , matchRpc' requestJobRp $ \() reply -> do
+                  say "request job"
+                  spawnLocal $ do
+                      link serverPid
+                      job <- liftIO $ takeJob jobQueue
+                      reply job
+                  return ()
+            , matchRpc getQueueStatusRp $ \() -> do
+                  say "get queue status"
+                  q <- liftIO $ getQueuedJobs jobQueue
+                  return (map jobRequest q, ())
+            ]
+    return (pid, ServerIface {..})
 
 newtype JobQueue = JobQueue (TVar (H.Heap (H.Entry Priority Job)))
 
@@ -84,33 +110,13 @@ pushJob (JobQueue qVar) job =
   where
     prio = jobPriority $ jobRequest job
 
-runWorker :: JobQueue -> Worker -> IO ()
-runWorker jobQueue worker = forever $ runExceptT $ do
-    job <- liftIO $ takeJob jobQueue
-    tryIO' $ runEffect $ worker (jobRequest job) >-> jobConn job
+getQueuedJobs :: JobQueue -> IO [Job]
+getQueuedJobs (JobQueue qVar) =
+    map (\(H.Entry _ x) -> x). toList <$> atomically (readTVar qVar)
 
-start :: PortID -> [Worker] -> IO ()
-start port workers = do
-    jobQueue <- newJobQueue
-    mapM_ (async . runWorker jobQueue) workers
-    listener port jobQueue
-
-handleRemoteWorker :: JobQueue -> Handle -> ExceptT String IO ()
-handleRemoteWorker jobQueue h = do
-    job <- liftIO $ takeJob jobQueue
-    tryIO' $ hPutBinary h (jobRequest job)
-    tryIO' $ runEffect $ fromHandleBinary h >-> handleError >-> jobConn job
-  where
-    handleError = forever $ do
-      res <- await
-      case res of
-        Left err -> yield $ Error err
-        Right a  -> yield a
-
-remoteWorker :: HostName -> PortID -> ExceptT String IO ()
-remoteWorker host port = forever $ do
-    h <- tryIO' $ connectTo host port
-    liftIO $ hSetBuffering h NoBuffering
-    tryIO' $ hPutBinary h WorkerReady
-    jobReq <- hGetBinary h
-    liftIO $ runEffect $ localWorker jobReq >-> toHandleBinary h
+runJobWithWorker :: Job -> Worker -> Process ExitCode
+runJobWithWorker (Job {..}) worker =
+    let intoSink = case jobSink of
+                     Just sink -> connectSink sink
+                     Nothing   -> \src -> runEffect $ src >-> PP.drain
+    in intoSink $ worker jobRequest

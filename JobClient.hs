@@ -1,8 +1,7 @@
-module JobClient ( enqueueJob
+module JobClient ( watchJob
                  , watchStatus
                  ) where
 
-import Network
 import Control.Monad.IO.Class
 import Control.Error
 import qualified Data.ByteString as BS
@@ -10,31 +9,32 @@ import System.IO
 import System.Exit
 import Pipes
 
+import Control.Distributed.Process
+
+import RemoteStream
+import Rpc
 import ProcessPipe
 import Types
-import Util
 
-enqueueJob :: HostName
-           -> PortID
-           -> JobRequest
-           -> IO (Producer (Either String Status) IO ())
-enqueueJob hostname port req = do
-    h <- connectTo hostname port
-    hSetBuffering h NoBuffering
-    hPutBinary h $ QueueJob req
-    return $ fromHandleBinary h
+watchJob :: ServerIface -> JobRequest
+         -> Process (Producer ProcessOutput Process ExitCode)
+watchJob iface req = do
+    say "watch1"
+    (sink, src) <- RemoteStream.newStream
+    say "watch2"
+    callRpc (enqueueJob iface) (req, Just sink)
+    say "watch3"
+    return $ RemoteStream.toProducer src
 
-watchStatus :: Producer (Either String Status) IO () -> ExceptT String IO ExitCode
+watchStatus :: MonadIO m => Producer ProcessOutput m a -> m a
 watchStatus = go
   where
     go prod = do
-      status <- liftIO $ next prod
+      status <- next prod
       case status of
-        Right (Left err, _) -> throwE $ "handleResult: Stream error: "++err
-        Right (Right x, prod') ->
-          case x of
-            PStatus (PutStdout a)  -> liftIO (BS.hPut stdout a) >> go prod'
-            PStatus (PutStderr a)  -> liftIO (BS.hPut stderr a) >> go prod'
-            PStatus (JobDone code) -> return code
-            Error err              -> throwE err
-        Left _ -> throwE "handleResult: Failed to return exit code before end of stream"
+        Right (x, prod') -> do
+          liftIO $ case x of
+                     PutStdout a  -> BS.hPut stdout a
+                     PutStderr a  -> BS.hPut stderr a
+          go prod'
+        Left code -> return code
