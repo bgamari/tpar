@@ -75,7 +75,7 @@ tparParser =
 main :: IO ()
 main = do
     opts <- execParser tpar
-    res <- runEitherT $ case opts of
+    res <- runExceptT $ case opts of
       Worker opts -> remoteWorker (workerHostName opts) (workerPort opts)
       Server opts -> do
         let workers = replicate (serverNLocalWorkers opts) localWorker

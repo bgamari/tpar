@@ -45,28 +45,28 @@ data Job = Job { jobConn    :: Consumer Status IO ()
                , jobRequest :: JobRequest
                }
 
-printEitherT :: EitherT String IO () -> IO ()
-printEitherT action = runEitherT action >>= either errLn return
+printExcept :: ExceptT String IO () -> IO ()
+printExcept action = runExceptT action >>= either errLn return
 
 listener :: PortID -> TQueue Job -> IO ()
 listener port jobQueue = do
     listenSock <- listenOn port
-    void $ forever $ printEitherT $ do
+    void $ forever $ printExcept $ do
         (h,_,_) <- liftIO $ accept listenSock
         liftIO $ hSetBuffering h NoBuffering
-        res <- liftIO $ runEitherT $ hGetBinary h
+        res <- liftIO $ runExceptT $ hGetBinary h
         case res of
           Right (QueueJob jobReq) ->
             liftIO $ atomically $ writeTQueue jobQueue (Job (toHandleBinary h) jobReq)
           Right WorkerReady       ->
-            liftIO $ void $ async $ runEitherT $ handleRemoteWorker jobQueue h
+            liftIO $ void $ async $ runExceptT $ handleRemoteWorker jobQueue h
           Left err                -> do
             liftIO $ errLn $ "Error in request: "++err
             tryIO' $ hPutBinary h $ Error err
             tryIO' $ hClose h
 
 runWorker :: TQueue Job -> Worker -> IO ()
-runWorker jobQueue worker = forever $ runEitherT $ do
+runWorker jobQueue worker = forever $ runExceptT $ do
     job <- liftIO $ atomically (readTQueue jobQueue)
     tryIO' $ runEffect $ worker (jobRequest job) >-> jobConn job
 
@@ -76,7 +76,7 @@ start port workers = do
     mapM_ (async . runWorker jobQueue) workers
     listener port jobQueue
 
-handleRemoteWorker :: TQueue Job -> Handle -> EitherT String IO ()
+handleRemoteWorker :: TQueue Job -> Handle -> ExceptT String IO ()
 handleRemoteWorker jobQueue h = do
     job <- liftIO $ atomically (readTQueue jobQueue)
     tryIO' $ hPutBinary h (jobRequest job)
@@ -88,7 +88,7 @@ handleRemoteWorker jobQueue h = do
         Left err -> yield $ Error err
         Right a  -> yield a
 
-remoteWorker :: HostName -> PortID -> EitherT String IO ()
+remoteWorker :: HostName -> PortID -> ExceptT String IO ()
 remoteWorker host port = forever $ do
     h <- tryIO' $ connectTo host port
     liftIO $ hSetBuffering h NoBuffering

@@ -17,17 +17,17 @@ import Pipes
 magicNumber :: Word32
 magicNumber = 0xdeadbeef
 
-runGetError :: Monad m => Get a -> LBS.ByteString -> EitherT String m a
+runGetError :: Monad m => Get a -> LBS.ByteString -> ExceptT String m a
 runGetError get bs = fmapRT third $ fmapLT third $ hoistEither $ runGetOrFail get bs
   where third (_,_,a) = a
 
-describe :: Monad m => String -> EitherT String m a -> EitherT String m a
+describe :: Monad m => String -> ExceptT String m a -> ExceptT String m a
 describe e = fmapLT ((e++": ")++)
 
-tryIO' :: IO a -> EitherT String IO a
+tryIO' :: IO a -> ExceptT String IO a
 tryIO' = fmapLT show . tryIO
 
-hGetBinary :: Binary a => Handle -> EitherT String IO a
+hGetBinary :: Binary a => Handle -> ExceptT String IO a
 hGetBinary h = do
     n <- describe "getting header" $ tryIO' $ LBS.hGet h 8
     len <- describe "parsing header" $ flip runGetError n $ do
@@ -51,4 +51,4 @@ toHandleBinary h =
 
 fromHandleBinary :: Binary a => Handle -> Producer (Either String a) IO ()
 fromHandleBinary h =
-    forever $ liftIO (runEitherT $ hGetBinary h) >>= yield
+    forever $ liftIO (runExceptT $ hGetBinary h) >>= yield
