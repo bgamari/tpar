@@ -57,9 +57,7 @@ runServer = do
     q <- liftIO $ newJobQueue
     (serverPid, iface) <- server q
     announce <- spawnLocal $ forever $ do
-        say "waiting"
         x <- expect :: Process (SendPort ServerIface)
-        say "have req"
         sendChan x iface
     register "tpar" announce
     return iface
@@ -71,22 +69,18 @@ server jobQueue = do
     (getQueueStatus, getQueueStatusRp) <- newRpc
 
     pid <- spawnLocal $ forever $ do
-        say "server waiitng"
         serverPid <- getSelfPid
         receiveWait
             [ matchRpc enqueueJobRp $ \(jobReq, dataStream) -> do
-                  say "enqueue"
                   liftIO $ pushJob jobQueue (Job dataStream jobReq)
                   return ((), ())
             , matchRpc' requestJobRp $ \() reply -> do
-                  say "request job"
                   spawnLocal $ do
                       link serverPid
                       job <- liftIO $ takeJob jobQueue
                       reply job
                   return ()
             , matchRpc getQueueStatusRp $ \() -> do
-                  say "get queue status"
                   q <- liftIO $ getQueuedJobs jobQueue
                   return (map jobRequest q, ())
             ]

@@ -49,9 +49,7 @@ withServer' host port action = do
         nid = NodeId (TCP.encodeEndPointAddress host port 0)
     (sq, rq) <- newChan :: Process (SendPort ServerIface, ReceivePort ServerIface)
     nsendRemote nid "tpar" sq
-    say $ "sent to "++show nid
     iface <- receiveChan rq
-    say "have resp"
     action iface
 
 withServer :: HostName -> ServiceName
@@ -119,7 +117,6 @@ modeEnqueue =
                                     , jobEnv      = Nothing
                                     }
             prod <- watchJob iface jobReq
-            say "watching job"
             when watch $ do
               code <- watchStatus prod
               liftIO $ putStrLn $ "exited with code "++show code

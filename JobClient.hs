@@ -19,11 +19,8 @@ import Types
 watchJob :: ServerIface -> JobRequest
          -> Process (Producer ProcessOutput Process ExitCode)
 watchJob iface req = do
-    say "watch1"
     (sink, src) <- RemoteStream.newStream
-    say "watch2"
     callRpc (enqueueJob iface) (req, Just sink)
-    say "watch3"
     return $ RemoteStream.toProducer src
 
 watchStatus :: MonadIO m => Producer ProcessOutput m a -> m a
