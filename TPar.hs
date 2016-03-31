@@ -3,13 +3,11 @@ import Control.Monad.IO.Class
 import Control.Error
 import Network
 import Options.Applicative
-import System.IO
 import Control.Concurrent (threadDelay)
 
 import JobClient
 import JobServer
 import Util
-import Types
 
 portOption :: Mod OptionFields PortID -> Parser PortID
 portOption m =
