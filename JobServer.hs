@@ -50,9 +50,7 @@ runRemoteWorker (ServerIface {..}) = forever $ do
     job <- callRpc requestJob ()
     runJobWithWorker job localWorker
 
-printExcept :: MonadIO m => ExceptT String m () -> m ()
-printExcept action = runExceptT action >>= either (liftIO . errLn) return
-
+-- | Spawn a process running a server
 runServer :: Process ServerIface
 runServer = do
     q <- liftIO newJobQueue
@@ -63,6 +61,7 @@ runServer = do
     register "tpar" announce
     return iface
 
+-- | The heart of the server
 server :: JobQueue -> Process ServerIface
 server jobQueue = do
     (enqueueJob, enqueueJobRp) <- newRpc
@@ -90,6 +89,7 @@ server jobQueue = do
             ]
     return $ ServerIface {..}
 
+-- | Our job queue
 newtype JobQueue = JobQueue (TVar (H.Heap (H.Entry Priority Job)))
 
 newJobQueue :: IO JobQueue
