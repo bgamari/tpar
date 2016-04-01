@@ -67,5 +67,5 @@ parseJobMatch =
     jobIdMatch :: Parser JobMatch
     jobIdMatch = do
         string "id="
-        NameMatch <$> between (char '"') (char '"') parseGlob
+        JobIdMatch . JobId . fromIntegral <$> integer
     altMatch = undefined

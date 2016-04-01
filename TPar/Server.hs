@@ -148,21 +148,33 @@ handleJobRequest serverPid jobQueue workerPid reply = do
 data JobKilled = JobKilled
 
 handleKillJobs :: JobQueue -> JobMatch -> Process [Job]
-handleKillJobs jobQueue match = do
-    let shouldBeKilled :: Job -> Maybe (ProcessId, JobId)
+handleKillJobs jq@(JobQueue {..}) match = do
+    let shouldBeKilled :: Job -> Maybe (Maybe ProcessId, JobId)
         shouldBeKilled job@(Job {..})
           | Running pid <- jobState
-          , jobMatches match job    = Just (pid, jobId)
+          , jobMatches match job    = Just (Just pid, jobId)
+          | Queued      <- jobState
+          , jobMatches match job    = Just (Nothing, jobId)
           | otherwise               = Nothing
-    jobsToKill <- liftIO $ atomically $ mapMaybe shouldBeKilled <$> getJobs jobQueue
+    jobsToKill <- liftIO $ atomically $ mapMaybe shouldBeKilled <$> getJobs jq
+    say $ "killing "++show jobsToKill
     killed <- forM jobsToKill $ \(pid, jobid) -> do
-        exit pid ProcessKilled
-        liftIO $ atomically $ updateJob jobQueue jobid $ \job ->
-            case jobState job of
-                Running _ -> (job {jobState=Killed}, Just $ jobId job)
-                _         -> (job, Nothing)
+        maybe (return ()) (flip exit ProcessKilled) pid
+        liftIO $ atomically $ do
+            oldState <- updateJob jq jobid $ \job ->
+                ( case jobState job of
+                    Finished _ -> job
+                    _          -> job {jobState=Killed}
+                , jobState job
+                )
+            case oldState of
+                Queued    -> do
+                    modifyTVar jobQueue $ H.fromList . filter (\(H.Entry _ job') -> job' /= jobid) . toList
+                    return $ Just jobid
+                Running _ -> return $ Just jobid
+                _         -> return Nothing
     let killedSet = S.fromList $ catMaybes killed
-    liftIO $ atomically $ filter (\job -> jobId job `S.member` killedSet) <$> getJobs jobQueue
+    liftIO $ atomically $ filter (\job -> jobId job `S.member` killedSet) <$> getJobs jq
 
 -----------------------------------------------------
 -- primitives
