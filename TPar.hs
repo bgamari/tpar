@@ -143,23 +143,34 @@ modeShowQueue :: Parser Mode
 modeShowQueue =
     run <$> hostOption idm
         <*> portOption (help "server port number")
+        <*> switch (short 'v' <> long "verbose" <> help "verbose queue status")
         <*  helper
   where
-    run serverHost serverPort =
+    run serverHost serverPort verbose =
         withServer serverHost serverPort $ \iface -> do
             jobs <- callRpc (getQueueStatus iface) ()
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map prettyJob jobs
+      where
+        prettyJob (JobRequest {..}) =
+                      prettyJobName jobName
+            T.PP.<+>  T.PP.indent 50 (prettyJobState Queued)
+            T.PP.<$$> details
+          where
+            details
+              | verbose =
+                    T.PP.indent 4 $ T.PP.vcat
+                    [ "priority:  " <> prettyPriority jobPriority
+                    , "command:   " <> T.PP.text jobCommand
+                    , "arguments: " <> T.PP.hsep (map T.PP.text jobArgs)
+                    ]
+              | otherwise = mempty
 
-    prettyJob (JobRequest {..}) =
-        prettyJobName jobName
-        T.PP.<$$> T.PP.indent 4
-            (T.PP.vcat [ "priority:  " <> prettyPriority jobPriority
-                       , "command:   " <> T.PP.text jobCommand
-                       , "arguments: " <> T.PP.hsep (map T.PP.text jobArgs)
-                       ])
+            prettyJobState Queued = T.PP.green "queued"
 
     prettyJobName (JobName name) = T.PP.text name
-    prettyPriority (Priority p)  = T.PP.text $ show p
+    prettyPriority (Priority p)  = T.PP.int p
+
+data JobState = Queued
 
 main :: IO ()
 main = do
