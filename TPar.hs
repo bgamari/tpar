@@ -110,7 +110,7 @@ modeEnqueue =
                    (short 'n' <> long "name" <> value (JobName "unnamed-job")
                     <> help "Set the job's name")
         <*> option (Priority <$> auto)
-                   (short 'p' <> long "priority" <> value (Priority 0)
+                   (short 'P' <> long "priority" <> value (Priority 0)
                     <> help "Set the job's priority")
         <*> some (argument str idm)
         <*  helper
