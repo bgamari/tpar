@@ -16,7 +16,7 @@ import TPar.Rpc
 import TPar.ProcessPipe
 import TPar.Server.Types
 import TPar.Types
-import Debug.Trace
+import TPar.Utils
 
 watchJob :: ServerIface -> JobRequest
          -> Process (Producer ProcessOutput Process ExitCode)
@@ -30,7 +30,7 @@ watchStatus = go
   where
     go prod = do
       status <- next prod
-      liftIO $ traceEventIO "Ben: watch message"
+      tparDebug "watch message"
       case status of
         Right (x, prod') -> do
           liftIO $ case x of

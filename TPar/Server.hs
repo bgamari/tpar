@@ -38,7 +38,7 @@ import TPar.ProcessPipe
 import TPar.Server.Types
 import TPar.Types
 import TPar.JobMatch
-import Debug.Trace
+import TPar.Utils
 
 type Worker = JobRequest -> Producer ProcessOutput Process ExitCode
 
@@ -95,14 +95,14 @@ server jobQueue = do
         serverPid <- getSelfPid
         receiveWait
             [ matchRpc enqueueJobRp $ \(jobReq, dataStream) -> do
-                  liftIO $ traceEventIO "Ben: enqueue"
+                  tparDebug "enqueue"
                   liftIO $ atomically $ do
                       jobId <- getFreshJobId jobQueue
                       queueJob jobQueue jobId dataStream jobReq
                       return (jobId, ())
 
             , matchRpc' requestJobRp $ \ workerPid () reply -> do
-                  liftIO $ traceEventIO "Ben: request job"
+                  tparDebug "request job"
                   spawnLocal $ handleJobRequest serverPid jobQueue workerPid reply
                   return ()
 
@@ -133,7 +133,7 @@ handleJobRequest serverPid jobQueue workerPid reply = do
     reply (job, finishedSp)
     let jobid = jobId job
     liftIO $ atomically $ setJobState jobQueue jobid (Running workerPid)
-    liftIO $ traceEventIO "Ben: job sent"
+    tparDebug "job sent"
 
     -- wait for result
     receiveWait

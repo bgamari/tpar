@@ -29,7 +29,7 @@ import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
 import GHC.Generics
-import Debug.Trace
+import TPar.Utils
 
 processPipes :: MonadIO m
              => FilePath                -- ^ Executable name
@@ -80,7 +80,7 @@ instance Exception ProcessKilled
 runProcess :: FilePath -> [String] -> Maybe FilePath
            -> Producer ProcessOutput Process ExitCode
 runProcess cmd args cwd = do
-    liftIO $ traceEventIO "Ben: starting process"
+    tparDebug "starting process"
     (stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args cwd Nothing
     let processKilled ProcessKilled = liftIO $ do
             terminateProcess phandle
@@ -90,5 +90,3 @@ runProcess cmd args cwd = do
                    , stdout >-> PP.map PutStdout
                    ]
         liftIO $ waitForProcess phandle
-
-traceIt msg = PP.mapM $ \x -> liftIO (traceEventIO msg) >> pure x
