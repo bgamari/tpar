@@ -65,7 +65,7 @@ modeWorker =
     run <$> hostOption idm
         <*> portOption (help "server port number")
         <*> option (Just <$> (auto <|> pure 10))
-                   ( short 'r' <> long "reconnect" <> metavar "SECONDS"
+                   ( short 'r' <> long "reconnect" <> metavar "SECONDS" <> value Nothing
                      <> help "attempt to reconnect when server vanishes (with optional retry period); otherwise terminates on server vanishing"
                    )
         <*  helper
