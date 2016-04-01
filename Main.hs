@@ -161,8 +161,10 @@ modeEnqueue =
             pure $ \iface jobReq -> void $ callRpc (enqueueJob iface) (jobReq, NoOutput)
 
         files =
-            go <$> option str (metavar "FILE" <> help "file to place stdout in")
-               <*> option str (metavar "FILE" <> help "file to place stderr in")
+            go <$> option str (short 'o' <> long "output" <> metavar "FILE"
+                               <> help "file to place stdout in")
+               <*> option str (short 'e' <> long "error" <> metavar "FILE"
+                               <> help "file to place stderr in")
           where
             go stdout stderr iface jobReq =
                 void $ callRpc (enqueueJob iface) (jobReq, ToFiles stdout stderr)
