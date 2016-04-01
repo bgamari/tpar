@@ -19,13 +19,16 @@ instance Binary GlobAtom
 
 type Glob = [GlobAtom]
 
-globToParser :: GlobAtom -> Parser ()
-globToParser WildCard    = void anyChar
-globToParser (Literal a) = void $ string a
+globAtomToParser :: GlobAtom -> Parser ()
+globAtomToParser WildCard    = void anyChar
+globAtomToParser (Literal a) = void $ string a
+
+globToParser :: Glob -> Parser ()
+globToParser atoms = traverse_ globAtomToParser atoms >> eof
 
 globMatches :: Glob -> String -> Bool
 globMatches glob str =
-    case parseString (traverse_ globToParser glob) mempty str of
+    case parseString (globToParser glob) mempty str of
         Success () -> True
         Failure _  -> False
 
