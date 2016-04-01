@@ -125,19 +125,22 @@ modeEnqueue =
         <*> option (JobName <$> str)
                    (short 'n' <> long "name" <> value (JobName "unnamed-job")
                     <> help "Set the job's name")
+        <*> option str
+                   (short 'd' <> long "directory" <> value "."
+                    <> help "Set the directory the job will be launched from (relative to the cwd of the worker who runs it)")
         <*> option (Priority <$> auto)
                    (short 'P' <> long "priority" <> value (Priority 0)
                     <> help "Set the job's priority")
         <*> some (argument str idm)
         <*  helper
   where
-    run serverHost serverPort watch name priority (cmd:args) =
+    run serverHost serverPort watch name dir priority (cmd:args) =
         withServer serverHost serverPort $ \iface -> do
             let jobReq = JobRequest { jobName     = name
                                     , jobPriority = priority
                                     , jobCommand  = cmd
                                     , jobArgs     = args
-                                    , jobCwd      = "."
+                                    , jobCwd      = dir
                                     , jobEnv      = Nothing
                                     }
             if not watch
@@ -150,7 +153,7 @@ modeEnqueue =
                       ExitSuccess   -> return ()
                       ExitFailure n ->
                           liftIO $ putStrLn $ "exited with code "++show n
-    run _ _ _ _ _ _ = fail "Expected command line"
+    run _ _ _ _ _ _ _ = fail "Expected command line"
 
 liftTrifecta :: TT.Parser a -> ReadM a
 liftTrifecta parser = do
