@@ -187,8 +187,8 @@ prettyJob verbose (Job {..}) =
 
     header =
         T.PP.fillBreak 5 (prettyJobId jobId)
-        <+> prettyJobName jobName
-        <+> T.PP.fillBreak 50 (prettyJobState jobState)
+        <+> T.PP.fillBreak 50 (prettyJobName jobName)
+        <+> prettyJobState jobState
 
     details =
         T.PP.indent 4 $ twoCols 15
