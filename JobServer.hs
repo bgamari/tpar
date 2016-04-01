@@ -92,9 +92,10 @@ server jobQueue = do
                   spawnLocal $ handleJobRequest serverPid jobQueue workerPid reply
                   return ()
 
-            , matchRpc getQueueStatusRp $ \() -> do
+            , matchRpc getQueueStatusRp $ \match -> do
                   q <- liftIO $ atomically $ getJobs jobQueue
-                  return (q, ())
+                  let filtered = filter (jobMatches match) q
+                  return (filtered, ())
             ]
     return $ ServerIface {..}
 

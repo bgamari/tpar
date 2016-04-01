@@ -13,6 +13,7 @@ import Control.Distributed.Process
 import ProcessPipe
 import Rpc
 import RemoteStream
+import JobMatch
 
 newtype JobId = JobId Int
               deriving (Eq, Ord, Show, Binary)
@@ -30,7 +31,7 @@ data ServerIface =
     ServerIface { serverPid :: ProcessId
                 , enqueueJob  :: RpcSendPort (JobRequest, Maybe (SinkPort ProcessOutput ExitCode)) JobId
                 , requestJob  :: RpcSendPort () (Job, SendPort ExitCode)
-                , getQueueStatus :: RpcSendPort () [Job]
+                , getQueueStatus :: RpcSendPort JobMatch [Job]
                 }
     deriving (Generic)
 

@@ -20,6 +20,7 @@ import Debug.Trace
 import Rpc
 import JobClient
 import JobServer
+import JobMatch
 import Types
 
 portOption :: Mod OptionFields ServiceName -> Parser ServiceName
@@ -149,11 +150,12 @@ modeShowQueue =
     run <$> hostOption idm
         <*> portOption (help "server port number")
         <*> switch (short 'v' <> long "verbose" <> help "verbose queue status")
+        <*> (argument (liftTrifecta parseJobMatch) (help "filter jobs") <|> pure AllMatch)
         <*  helper
   where
     run serverHost serverPort verbose =
-        withServer serverHost serverPort $ \iface -> do
-            jobs <- callRpc (getQueueStatus iface) ()
+        withServer serverHost serverPort match $ \iface -> do
+            jobs <- callRpc (getQueueStatus iface) match
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map prettyJob jobs
       where
         prettyJob (Job {..}) =
