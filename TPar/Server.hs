@@ -169,7 +169,7 @@ handleKillJobs jq@(JobQueue {..}) match = do
                 )
             case oldState of
                 Queued    -> do
-                    modifyTVar jobQueue $ H.fromList . filter (\(H.Entry _ job') -> job' /= jobid) . toList
+                    modifyTVar jobQueue $ H.fromList . filter (\(_, job') -> job' /= jobid) . toList
                     return $ Just jobid
                 Running _ -> return $ Just jobid
                 _         -> return Nothing
@@ -181,7 +181,7 @@ handleKillJobs jq@(JobQueue {..}) match = do
 
 -- | Our job queue state
 data JobQueue = JobQueue { freshJobIds :: TVar [JobId]
-                         , jobQueue    :: TVar (H.Heap (H.Entry Priority JobId))
+                         , jobQueue    :: TVar (H.Heap (Priority, JobId))
                          , jobs        :: TVar (M.Map JobId Job)
                          }
 
@@ -201,7 +201,7 @@ takeQueuedJob jq@(JobQueue {..}) = do
     q <- readTVar jobQueue
     case H.viewMin q of
         Nothing -> retry
-        Just (H.Entry _ jobid, q') -> do
+        Just ((_, jobid), q') -> do
             writeTVar jobQueue q'
             getJob jq jobid
 
@@ -222,7 +222,7 @@ setJobState jobQueue jobId newState =
 
 queueJob :: JobQueue -> JobId -> Maybe (SinkPort ProcessOutput ExitCode) -> JobRequest -> STM ()
 queueJob (JobQueue {..}) jobId jobSink jobRequest = do
-    modifyTVar jobQueue $ H.insert (H.Entry prio jobId)
+    modifyTVar jobQueue $ H.insert (prio, jobId)
     modifyTVar jobs $ M.insert jobId (Job {jobState = Queued, ..})
   where
     prio = jobPriority jobRequest
