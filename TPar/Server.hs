@@ -18,9 +18,11 @@ import Data.Binary
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Foldable
+import Data.Traversable
 import Control.Monad (forever, filterM)
 import qualified Data.Heap as H
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Control.Distributed.Process
 
 import System.IO (Handle, hClose, hSetBuffering, BufferMode(NoBuffering))
@@ -87,6 +89,7 @@ server jobQueue = do
     (enqueueJob, enqueueJobRp) <- newRpc
     (requestJob, requestJobRp) <- newRpc
     (getQueueStatus, getQueueStatusRp) <- newRpc
+    (killJobs, killJobsRp) <- newRpc
 
     serverPid <- spawnLocal $ void $ forever $ do
         serverPid <- getSelfPid
@@ -107,6 +110,10 @@ server jobQueue = do
                   q <- liftIO $ atomically $ getJobs jobQueue
                   let filtered = filter (jobMatches match) q
                   return (filtered, ())
+
+            , matchRpc killJobsRp $ \match -> do
+                  killedJobs <- handleKillJobs jobQueue match
+                  return (killedJobs, ())
             ]
     return $ ServerIface {..}
 
@@ -138,17 +145,24 @@ handleJobRequest serverPid jobQueue workerPid reply = do
         ]
     unmonitor monRef
 
-{-
 data JobKilled = JobKilled
 
-killJobs :: JobQueue -> JobMatch -> Process ()
-killJobs jobQueue jobs = do
-    let shouldBeKilled :: Job -> Bool
-        shouldBeKilled (Job {..})
+handleKillJobs :: JobQueue -> JobMatch -> Process [Job]
+handleKillJobs jobQueue match = do
+    let shouldBeKilled :: Job -> Maybe (ProcessId, JobId)
+        shouldBeKilled job@(Job {..})
           | Running pid <- jobState
-    liftIO $ atomically $ filter shouldBeKilled . M.elems <$> getJobs jobQueue
-    exit 
--}
+          , jobMatches match job    = Just (pid, jobId)
+          | otherwise               = Nothing
+    jobsToKill <- liftIO $ atomically $ mapMaybe shouldBeKilled <$> getJobs jobQueue
+    killed <- forM jobsToKill $ \(pid, jobid) -> do
+        exit pid ProcessKilled
+        liftIO $ atomically $ updateJob jobQueue jobid $ \job ->
+            case jobState job of
+                Running _ -> (job {jobState=Killed}, Just $ jobId job)
+                _         -> (job, Nothing)
+    let killedSet = S.fromList $ catMaybes killed
+    liftIO $ atomically $ filter (\job -> jobId job `S.member` killedSet) <$> getJobs jobQueue
 
 -----------------------------------------------------
 -- primitives
@@ -182,12 +196,17 @@ takeQueuedJob jq@(JobQueue {..}) = do
 getJob :: JobQueue -> JobId -> STM Job
 getJob (JobQueue {..}) jobId = (M.! jobId) <$> readTVar jobs
 
+updateJob :: JobQueue -> JobId -> (Job -> (Job, a)) -> STM a
+updateJob (JobQueue {..}) jobId f = do
+    jobsMap <- readTVar jobs
+    Just x <- pure $ M.lookup jobId jobsMap
+    let (x', r) = f x
+    writeTVar jobs $ M.insert jobId x' jobsMap
+    return r
+
 setJobState :: JobQueue -> JobId -> JobState -> STM ()
-setJobState (JobQueue {..}) jobId newState =
-    modifyTVar jobs $ M.alter setState jobId
-  where
-    setState (Just s) = Just $ s { jobState = newState }
-    setState _        = error "setJobState: unknown JobId"
+setJobState jobQueue jobId newState =
+    updateJob jobQueue jobId (\s -> (s {jobState = newState}, ()))
 
 queueJob :: JobQueue -> JobId -> Maybe (SinkPort ProcessOutput ExitCode) -> JobRequest -> STM ()
 queueJob (JobQueue {..}) jobId jobSink jobRequest = do
