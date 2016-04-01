@@ -1,3 +1,7 @@
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
+
+import qualified Text.PrettyPrint.ANSI.Leijen as T.PP
 import Control.Monad (when, forever, replicateM_)
 import Control.Monad.IO.Class
 import Control.Error
@@ -10,6 +14,7 @@ import Control.Distributed.Process.Internal.Types (NodeId(..))
 import Control.Distributed.Process.Node
 import Debug.Trace
 
+import Rpc
 import JobClient
 import JobServer
 import Types
@@ -42,6 +47,8 @@ tparParser =
                           $ fullDesc <> progDesc "Start a worker")
      <> command "enqueue" ( info modeEnqueue
                           $ fullDesc <> progDesc "Enqueue a job")
+     <> command "status"  ( info modeShowQueue
+                          $ fullDesc <> progDesc "Show queue status")
 
 withServer' :: HostName -> ServiceName
            -> (ServerIface -> Process a) -> Process a
@@ -125,6 +132,28 @@ modeEnqueue =
               liftIO $ traceEventIO "Ben: watched"
               liftIO $ putStrLn $ "exited with code "++show code
     run _ _ _ _ _ _ = fail "Expected command line"
+
+modeShowQueue :: Parser Mode
+modeShowQueue =
+    run <$> hostOption idm
+        <*> portOption (help "server port number")
+        <*  helper
+  where
+    run serverHost serverPort =
+        withServer serverHost serverPort $ \iface -> do
+            jobs <- callRpc (getQueueStatus iface) ()
+            liftIO $ T.PP.putDoc $ T.PP.vcat $ map prettyJob jobs
+
+    prettyJob (JobRequest {..}) =
+        prettyJobName jobName
+        T.PP.<$$> T.PP.indent 4
+            (T.PP.vcat [ "priority:  " <> prettyPriority jobPriority
+                       , "command:   " <> T.PP.text jobCommand
+                       , "arguments: " <> T.PP.hsep (map T.PP.text jobArgs)
+                       ])
+
+    prettyJobName (JobName name) = T.PP.text name
+    prettyPriority (Priority p)  = T.PP.text $ show p
 
 main :: IO ()
 main = do
