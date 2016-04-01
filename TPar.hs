@@ -175,9 +175,14 @@ modeShowQueue =
                 [ ("priority:",  prettyPriority jobPriority)
                 , ("command:",   T.PP.text jobCommand)
                 , ("arguments:", T.PP.hsep $ map T.PP.text jobArgs)
-                , ("status:",    T.PP.text "hello")
+                , ("status:",    prettyDetailedState jobState)
                 ]
                 T.PP.<$$> mempty
+
+    prettyDetailedState Queued                = "waiting to run"
+    prettyDetailedState (Running node)        = "running on" <+> T.PP.text (show node)
+    prettyDetailedState (Finished code)       = "finished with" <+> T.PP.text (show code)
+    prettyDetailedState Failed                = "failed with error"
 
     prettyJobState Queued                     = T.PP.blue "queued"
     prettyJobState (Running _)                = T.PP.green "running"
