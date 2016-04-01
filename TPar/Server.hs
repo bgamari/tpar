@@ -50,10 +50,18 @@ sshWorker host rootPath req = do
     cwd = rootPath ++ "/" ++ jobCwd req  -- HACK
 
 runRemoteWorker :: ServerIface -> Process ()
-runRemoteWorker (ServerIface {..}) = forever $ do
-    (job, finishedSp) <- callRpc requestJob ()
-    code <- runJobWithWorker job localWorker
-    sendChan finishedSp code
+runRemoteWorker (ServerIface {..}) = forever runOneJob
+  where
+    runOneJob = do
+        doneVar <- liftIO newEmptyTMVarIO
+        -- We run each process in a separate thread to ensure that ProcessKilled
+        -- exceptions go to the wrong job.
+        let finished = liftIO $ atomically $ putTMVar doneVar ()
+        spawnLocal $ finally finished $ do
+            (job, finishedSp) <- callRpc requestJob ()
+            code <- runJobWithWorker job localWorker
+            sendChan finishedSp code
+        liftIO $ atomically $ takeTMVar doneVar
 
 runJobWithWorker :: Job -> Worker -> Process ExitCode
 runJobWithWorker (Job {..}) worker =

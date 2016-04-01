@@ -3,6 +3,8 @@
 
 module TPar.ProcessPipe ( ProcessOutput(..)
                         , runProcess
+                          -- * Killing the process
+                        , ProcessKilled(..)
                         ) where
 
 import Control.Applicative
@@ -11,14 +13,17 @@ import qualified Pipes.ByteString as PBS
 import Data.ByteString (ByteString)
 import Data.Traversable
 import Control.Monad (msum)
+import Control.Exception (Exception)
 
 import Pipes
+import Pipes.Safe () -- for MonadCatch instance
 import qualified Pipes.Concurrent as PC
-import System.Process (runInteractiveProcess, ProcessHandle, waitForProcess)
+import System.Process (runInteractiveProcess, ProcessHandle, waitForProcess, terminateProcess)
 import System.Exit
 import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Distributed.Process
+import Control.Monad.Catch (handle, throwM)
 
 import Data.Binary
 import Data.Binary.Put
@@ -66,14 +71,24 @@ instance Binary ExitCode where
     put ExitSuccess        = putWord32le 0
     put (ExitFailure code) = putWord32le (fromIntegral code)
 
+data ProcessKilled = ProcessKilled
+                   deriving (Show, Generic)
+
+instance Binary ProcessKilled
+instance Exception ProcessKilled
+
 runProcess :: FilePath -> [String] -> Maybe FilePath
            -> Producer ProcessOutput Process ExitCode
 runProcess cmd args cwd = do
     liftIO $ traceEventIO "Ben: starting process"
     (stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args cwd Nothing
-    interleave [ stderr >-> PP.map PutStderr
-               , stdout >-> PP.map PutStdout
-               ]
-    liftIO (waitForProcess phandle)
+    let processKilled ProcessKilled = liftIO $ do
+            terminateProcess phandle
+            throwM ProcessKilled
+    handle processKilled $ do
+        interleave [ stderr >-> PP.map PutStderr
+                   , stdout >-> PP.map PutStdout
+                   ]
+        liftIO $ waitForProcess phandle
 
 traceIt msg = PP.mapM $ \x -> liftIO (traceEventIO msg) >> pure x
