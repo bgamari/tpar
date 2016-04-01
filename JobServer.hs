@@ -120,8 +120,9 @@ handleJobRequest serverPid jobQueue workerPid reply = do
     receiveWait
         [ matchChan finishedRp $ \code -> do
               liftIO $ atomically $ setJobState jobQueue jobid (Finished code)
-        , matchIf (\(PortMonitorNotification ref _ _) -> ref == monRef) $ const $ do
-              liftIO $ atomically $ setJobState jobQueue jobid Failed
+        , matchIf (\(PortMonitorNotification ref _ _) -> ref == monRef) $
+          \(PortMonitorNotification _ _ reason) -> do
+              liftIO $ atomically $ setJobState jobQueue jobid (Failed $ show reason)
         ]
     unmonitor monRef
 

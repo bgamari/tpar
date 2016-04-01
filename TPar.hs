@@ -182,13 +182,13 @@ modeShowQueue =
     prettyDetailedState Queued                = "waiting to run"
     prettyDetailedState (Running node)        = "running on" <+> T.PP.text (show node)
     prettyDetailedState (Finished code)       = "finished with" <+> T.PP.text (show code)
-    prettyDetailedState Failed                = "failed with error"
+    prettyDetailedState (Failed err)          = "failed with error:" <+> T.PP.text err
 
     prettyJobState Queued                     = T.PP.blue "queued"
     prettyJobState (Running _)                = T.PP.green "running"
     prettyJobState (Finished ExitSuccess)     = T.PP.cyan "finished"
     prettyJobState (Finished (ExitFailure c)) = T.PP.yellow $ "finished"<+>T.PP.parens (T.PP.int c)
-    prettyJobState Failed                     = T.PP.red "failed"
+    prettyJobState (Failed _)                 = T.PP.red "failed"
 
     prettyJobId (JobId n)        = T.PP.int n
     prettyJobName (JobName name) = T.PP.text name

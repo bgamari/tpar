@@ -56,7 +56,7 @@ newtype Priority = Priority Int
 data JobState = Queued
               | Running ProcessId
               | Finished ExitCode
-              | Failed
+              | Failed String
               deriving (Show, Generic)
 
 instance Binary JobState
