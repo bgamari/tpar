@@ -1,10 +1,11 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-import Control.Monad (when, forever, replicateM_)
+import Control.Monad (when, forever, replicateM_, void)
 import Control.Monad.IO.Class
 import Control.Error
 import System.Exit
+import System.IO (stderr, stdout)
 
 import qualified Text.PrettyPrint.ANSI.Leijen as T.PP
 import Text.PrettyPrint.ANSI.Leijen (Doc, (<+>))
@@ -16,10 +17,10 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (NodeId(..))
 import Control.Distributed.Process.Node
 import qualified Text.Trifecta as TT
-import Debug.Trace
 
 import TPar.Rpc
-import TPar.JobClient
+import TPar.RemoteStream as RemoteStream
+import TPar.ProcessPipe (processOutputToHandles)
 import TPar.Server
 import TPar.Server.Types
 import TPar.JobMatch
@@ -121,7 +122,7 @@ modeEnqueue :: Parser Mode
 modeEnqueue =
     run <$> hostOption idm
         <*> portOption (help "server port number")
-        <*> switch (short 'w' <> long "watch" <> help "Watch output of task")
+        <*> sinkType
         <*> option (JobName <$> str)
                    (short 'n' <> long "name" <> value (JobName "unnamed-job")
                     <> help "Set the job's name")
@@ -134,7 +135,7 @@ modeEnqueue =
         <*> some (argument str idm)
         <*  helper
   where
-    run serverHost serverPort watch name dir priority (cmd:args) =
+    run serverHost serverPort runSink name dir priority (cmd:args) =
         withServer serverHost serverPort $ \iface -> do
             let jobReq = JobRequest { jobName     = name
                                     , jobPriority = priority
@@ -143,17 +144,33 @@ modeEnqueue =
                                     , jobCwd      = dir
                                     , jobEnv      = Nothing
                                     }
-            if not watch
-               then do _ <- callRpc (enqueueJob iface) (jobReq, Nothing)
-                       return ()
-               else do
-                  prod <- watchJob iface jobReq
-                  code <- watchStatus prod
-                  case code of
-                      ExitSuccess   -> return ()
-                      ExitFailure n ->
-                          liftIO $ putStrLn $ "exited with code "++show n
+            runSink iface jobReq
     run _ _ _ _ _ _ _ = fail "Expected command line"
+
+    sinkType :: Parser (ServerIface -> JobRequest -> Process ())
+    sinkType = remoteSink <|> files <|> noOutput
+      where
+        noOutput =
+            pure $ \iface jobReq -> void $ callRpc (enqueueJob iface) (jobReq, NoOutput)
+
+        files =
+            go <$> option str (metavar "FILE" <> help "file to place stdout in")
+               <*> option str (metavar "FILE" <> help "file to place stderr in")
+          where
+            go stdout stderr iface jobReq =
+                void $ callRpc (enqueueJob iface) (jobReq, ToFiles stdout stderr)
+
+        remoteSink =
+            switch (short 'w' <> long "watch" <> help "Watch output of task")
+            *> pure go
+          where
+            go iface jobReq = do
+                prod <- enqueueAndFollow iface jobReq
+                code <- processOutputToHandles stdout stderr prod
+                case code of
+                    ExitSuccess   -> return ()
+                    ExitFailure n ->
+                        liftIO $ putStrLn $ "exited with code "++show n
 
 liftTrifecta :: TT.Parser a -> ReadM a
 liftTrifecta parser = do

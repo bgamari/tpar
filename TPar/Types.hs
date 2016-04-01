@@ -17,13 +17,20 @@ newtype JobId = JobId Int
               deriving (Eq, Ord, Show, Binary)
 
 data Job = Job { jobId      :: !JobId
-               , jobSink    :: Maybe (SinkPort ProcessOutput ExitCode)
+               , jobSink    :: OutputSink
                , jobRequest :: JobRequest
                , jobState   :: !JobState
                }
          deriving (Generic)
 
 instance Binary Job
+
+data OutputSink = NoOutput
+                | ToRemoteSink (SinkPort ProcessOutput ExitCode)
+                | ToFiles FilePath FilePath
+                deriving (Generic)
+
+instance Binary OutputSink
 
 newtype JobName = JobName String
                 deriving (Show, Eq, Ord, Binary)

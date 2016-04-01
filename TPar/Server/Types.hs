@@ -15,7 +15,7 @@ import TPar.Types
 
 data ServerIface =
     ServerIface { serverPid :: ProcessId
-                , enqueueJob  :: RpcSendPort (JobRequest, Maybe (SinkPort ProcessOutput ExitCode)) JobId
+                , enqueueJob  :: RpcSendPort (JobRequest, OutputSink) JobId
                 , requestJob  :: RpcSendPort () (Job, SendPort ExitCode)
                 , killJobs    :: RpcSendPort JobMatch [Job]
                 , getQueueStatus :: RpcSendPort JobMatch [Job]

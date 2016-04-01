@@ -5,21 +5,25 @@ module TPar.ProcessPipe ( ProcessOutput(..)
                         , runProcess
                           -- * Killing the process
                         , ProcessKilled(..)
+                          -- * Deinterleaving output
+                        , processOutputToHandles
                         ) where
 
 import Control.Applicative
 import qualified Pipes.Prelude as PP
 import qualified Pipes.ByteString as PBS
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import Data.Traversable
 import Control.Monad (msum)
 import Control.Exception (Exception)
+import System.IO (Handle)
+import System.Exit
 
 import Pipes
 import Pipes.Safe () -- for MonadCatch instance
 import qualified Pipes.Concurrent as PC
 import System.Process (runInteractiveProcess, ProcessHandle, waitForProcess, terminateProcess)
-import System.Exit
 import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Distributed.Process
@@ -90,3 +94,17 @@ runProcess cmd args cwd = do
                    , stdout >-> PP.map PutStdout
                    ]
         liftIO $ waitForProcess phandle
+
+processOutputToHandles :: MonadIO m
+                       => Handle -> Handle -> Producer ProcessOutput m a -> m a
+processOutputToHandles stdout stderr = go
+  where
+    go prod = do
+      status <- next prod
+      case status of
+        Right (x, prod') -> do
+          liftIO $ case x of
+                     PutStdout a  -> BS.hPut stdout a
+                     PutStderr a  -> BS.hPut stderr a
+          go prod'
+        Left code -> return code

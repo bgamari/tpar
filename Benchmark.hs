@@ -8,7 +8,6 @@ import Control.Concurrent.Async
 import Pipes
 import qualified Pipes.Prelude as PP
 
-import TPar.JobClient
 import TPar.Server
 import TPar.Server.Types
 import TPar.Types
@@ -21,7 +20,7 @@ singleNode = do
         iface <- runServer
         replicateM_ 1 $ spawnLocal $ runRemoteWorker iface
         replicateM_ 100 $ do
-            prod <- watchJob iface jobReq
+            prod <- enqueueAndFollow iface jobReq
             runEffect $ prod >-> PP.drain
 
 jobReq = JobRequest { jobName     = JobName "hello"
@@ -58,7 +57,7 @@ multiNode = do
     node3 <- newLocalNode transport3 initRemoteTable
     runProcess node3 $ do
         replicateM_ 100 $ do
-            prod <- watchJob iface jobReq
+            prod <- enqueueAndFollow iface jobReq
             runEffect $ prod >-> PP.print
 
     putMVar doneVar ()

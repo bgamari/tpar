@@ -6,9 +6,11 @@ module TPar.Server
     , localWorker
     , sshWorker
     , runRemoteWorker
-      -- * Running
+      -- * Running the server
     , server
     , runServer
+      -- * Convenience wrappers
+    , enqueueAndFollow
     ) where
 
 import Control.Error
@@ -25,7 +27,8 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Control.Distributed.Process
 
-import System.IO (Handle, hClose, hSetBuffering, BufferMode(NoBuffering))
+import System.IO ( Handle, openFile, hClose, IOMode(..)
+                 , hSetBuffering, BufferMode(NoBuffering))
 import System.Exit
 import Control.Concurrent.STM
 
@@ -33,12 +36,25 @@ import Pipes
 import qualified Pipes.Prelude as PP
 
 import TPar.Rpc
-import TPar.RemoteStream
+import TPar.RemoteStream as RemoteStream
 import TPar.ProcessPipe
 import TPar.Server.Types
 import TPar.Types
 import TPar.JobMatch
 import TPar.Utils
+
+-----------------------------------------------
+-- Convenience wrappers
+
+enqueueAndFollow :: ServerIface -> JobRequest
+                 -> Process (Producer ProcessOutput Process ExitCode)
+enqueueAndFollow iface jobReq = do
+    (sink, src) <- RemoteStream.newStream
+    callRpc (enqueueJob iface) (jobReq, ToRemoteSink sink)
+    return $ RemoteStream.toProducer src
+
+-----------------------------------------------
+-- Workers
 
 type Worker = JobRequest -> Producer ProcessOutput Process ExitCode
 
@@ -68,9 +84,18 @@ runRemoteWorker (ServerIface {..}) = forever runOneJob
 runJobWithWorker :: Job -> Worker -> Process ExitCode
 runJobWithWorker (Job {..}) worker =
     let intoSink = case jobSink of
-                     Just sink -> connectSink sink
-                     Nothing   -> \src -> runEffect $ src >-> PP.drain
+                     ToRemoteSink sink -> connectSink sink
+                     NoOutput          -> \src -> runEffect $ src >-> PP.drain
+                     ToFiles so se     -> \src ->
+                         withOutFile so $ \hStdout ->
+                         withOutFile se $ \hStderr ->
+                         processOutputToHandles hStdout hStderr src
     in intoSink $ worker jobRequest
+  where
+    withOutFile path = bracket (liftIO $ openFile path WriteMode) (liftIO . hClose)
+
+------------------------------------------------
+-- the server
 
 -- | Spawn a process running a server
 runServer :: Process ServerIface
@@ -220,7 +245,7 @@ setJobState :: JobQueue -> JobId -> JobState -> STM ()
 setJobState jobQueue jobId newState =
     updateJob jobQueue jobId (\s -> (s {jobState = newState}, ()))
 
-queueJob :: JobQueue -> JobId -> Maybe (SinkPort ProcessOutput ExitCode) -> JobRequest -> STM ()
+queueJob :: JobQueue -> JobId -> OutputSink -> JobRequest -> STM ()
 queueJob (JobQueue {..}) jobId jobSink jobRequest = do
     modifyTVar jobQueue $ H.insert (prio, jobId)
     modifyTVar jobs $ M.insert jobId (Job {jobState = Queued, ..})
