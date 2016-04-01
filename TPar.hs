@@ -91,7 +91,7 @@ modeServer =
         node <- newLocalNode transport initRemoteTable
         runProcess node $ do
             iface <- runServer
-            replicateM_ nLocalWorkers $ runRemoteWorker iface
+            replicateM_ nLocalWorkers $ spawnLocal $ runRemoteWorker iface
             liftIO $ forever $ threadDelay maxBound
 
 modeEnqueue :: Parser Mode
