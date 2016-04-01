@@ -140,13 +140,16 @@ modeEnqueue =
                                     , jobCwd      = "."
                                     , jobEnv      = Nothing
                                     }
-            prod <- watchJob iface jobReq
-            when watch $ do
-              code <- watchStatus prod
-              case code of
-                  ExitSuccess   -> return ()
-                  ExitFailure n ->
-                      liftIO $ putStrLn $ "exited with code "++show n
+            if not watch
+               then do _ <- callRpc (enqueueJob iface) (jobReq, Nothing)
+                       return ()
+               else do
+                  prod <- watchJob iface jobReq
+                  code <- watchStatus prod
+                  case code of
+                      ExitSuccess   -> return ()
+                      ExitFailure n ->
+                          liftIO $ putStrLn $ "exited with code "++show n
     run _ _ _ _ _ _ = fail "Expected command line"
 
 liftTrifecta :: TT.Parser a -> ReadM a
