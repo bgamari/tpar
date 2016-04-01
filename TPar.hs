@@ -179,11 +179,11 @@ modeShowQueue =
                 ]
                 T.PP.<$$> mempty
 
-    prettyJobState Queued       = T.PP.blue "queued"
-    prettyJobState (Running _)  = T.PP.green "running"
-    prettyJobState (Finished ExitSuccess) = T.PP.cyan "finished"
-    prettyJobState (Finished _) = T.PP.yellow "exited unsuccessfully"
-    prettyJobState (Failed)     = T.PP.red "failed"
+    prettyJobState Queued                     = T.PP.blue "queued"
+    prettyJobState (Running _)                = T.PP.green "running"
+    prettyJobState (Finished ExitSuccess)     = T.PP.cyan "finished"
+    prettyJobState (Finished (ExitFailure c)) = T.PP.yellow $ "finished"<+>T.PP.parens (T.PP.int c)
+    prettyJobState Failed                     = T.PP.red "failed"
 
     prettyJobId (JobId n)        = T.PP.int n
     prettyJobName (JobName name) = T.PP.text name
