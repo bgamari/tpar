@@ -106,6 +106,7 @@ handleJobRequest :: ProcessId
 handleJobRequest serverPid jobQueue workerPid reply = do
     -- get a job
     link serverPid
+    monRef <- monitor workerPid
     job <- liftIO $ atomically $ takeQueuedJob jobQueue
 
     -- send the job to worker
@@ -116,8 +117,14 @@ handleJobRequest serverPid jobQueue workerPid reply = do
     liftIO $ traceEventIO "Ben: job sent"
 
     -- wait for result
-    code <- receiveChan finishedRp
-    liftIO $ atomically $ setJobState jobQueue jobid (Finished code)
+    receiveWait
+        [ matchChan finishedRp $ \code -> do
+              liftIO $ atomically $ setJobState jobQueue jobid (Finished code)
+        , matchIf (\(PortMonitorNotification ref _ _) -> ref == monRef) $ const $ do
+              liftIO $ atomically $ setJobState jobQueue jobid Failed
+        ]
+    unmonitor monRef
+
 
 -----------------------------------------------------
 -- primitives
