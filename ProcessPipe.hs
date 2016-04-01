@@ -71,13 +71,9 @@ runProcess :: FilePath -> [String] -> Maybe FilePath
 runProcess cmd args cwd = do
     liftIO $ traceEventIO "Ben: starting process"
     (stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args cwd Nothing
-    liftIO $ traceEventIO "Ben: process running"
-    interleave [ stderr >-> PP.map PutStderr >-> traceIt "Ben: stderr"
-               , stdout >-> PP.map PutStdout >-> traceIt "Ben: stdout"
-               ] >-> traceIt "Ben: output"
-    liftIO $ traceEventIO "Ben: interleave done"
-    r <- liftIO (waitForProcess phandle)
-    liftIO $ traceEventIO "Ben: process done"
-    pure r
+    interleave [ stderr >-> PP.map PutStderr
+               , stdout >-> PP.map PutStdout
+               ]
+    liftIO (waitForProcess phandle)
 
 traceIt msg = PP.mapM $ \x -> liftIO (traceEventIO msg) >> pure x
