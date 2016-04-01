@@ -140,13 +140,13 @@ modeEnqueue =
                                     , jobCwd      = "."
                                     , jobEnv      = Nothing
                                     }
-            liftIO $ traceEventIO "Ben: starting"
             prod <- watchJob iface jobReq
-            liftIO $ traceEventIO "Ben: watching"
             when watch $ do
               code <- watchStatus prod
-              liftIO $ traceEventIO "Ben: watched"
-              liftIO $ putStrLn $ "exited with code "++show code
+              case code of
+                  ExitSuccess   -> return ()
+                  ExitFailure n ->
+                      liftIO $ putStrLn $ "exited with code "++show n
     run _ _ _ _ _ _ = fail "Expected command line"
 
 liftTrifecta :: TT.Parser a -> ReadM a
@@ -221,6 +221,7 @@ modeKill =
         withServer serverHost serverPort $ \iface -> do
             jobs <- callRpc (killJobs iface) match
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False) jobs
+            liftIO $ when (null jobs) $ exitWith $ ExitFailure 1
 
 main :: IO ()
 main = do
