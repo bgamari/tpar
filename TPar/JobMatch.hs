@@ -42,10 +42,11 @@ parseGlob = many $ wildCard <|> literal
 
 data JobMatch = NoMatch
               | AllMatch
+              | NegMatch JobMatch
               | NameMatch Glob
               | JobIdMatch JobId
-              | AltMatch JobMatch JobMatch
-              deriving (Generic)
+              | AltMatch [JobMatch]
+              deriving (Generic, Show)
 
 instance Binary JobMatch
 
@@ -55,20 +56,25 @@ jobMatches AllMatch           _   = True
 jobMatches (NameMatch glob)   job = globMatches glob name
   where JobName name = jobName $ jobRequest job
 jobMatches (JobIdMatch jobid) job = jobId job == jobid
-jobMatches (AltMatch x y)     job = jobMatches x job || jobMatches y job
+jobMatches (AltMatch alts)    job = any (`jobMatches` job) alts
 
 parseJobMatch :: Parser JobMatch
 parseJobMatch =
-    allMatch <|> nameMatch <|> jobIdMatch <|> altMatch
+    AltMatch <$> (negMatch <|> nameMatch <|> jobIdMatch) `sepBy1` char ','
   where
     allMatch :: Parser JobMatch
     allMatch = char '*' >> pure AllMatch
+
     nameMatch :: Parser JobMatch
     nameMatch = do
         string "name="
         NameMatch <$> between (char '"') (char '"') parseGlob
+
     jobIdMatch :: Parser JobMatch
     jobIdMatch = do
         string "id="
         JobIdMatch . JobId . fromIntegral <$> integer
-    altMatch = undefined
+
+    negMatch = do
+        char '!'
+        NegMatch <$> between (char '(') (char ')') parseJobMatch
