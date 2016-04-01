@@ -7,6 +7,7 @@ import Control.Error
 import System.Exit
 
 import qualified Text.PrettyPrint.ANSI.Leijen as T.PP
+import Text.PrettyPrint.ANSI.Leijen (Doc, (<+>))
 import qualified Network.Transport.TCP as TCP
 import Network.Socket (ServiceName, HostName)
 import Options.Applicative
@@ -155,25 +156,36 @@ modeShowQueue =
             jobs <- callRpc (getQueueStatus iface) ()
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map prettyJob jobs
       where
-        prettyJob (JobRequest {..}) =
-                      prettyJobName jobName
-            T.PP.<+>  T.PP.indent 50 (prettyJobState Queued)
-            T.PP.<$$> details
+        prettyJob (Job {..}) =
+            T.PP.vcat $ [header] ++ (if verbose then [details] else [])
           where
-            details
-              | verbose =
-                    T.PP.indent 4 $ T.PP.vcat
-                    [ "priority:  " <> prettyPriority jobPriority
-                    , "command:   " <> T.PP.text jobCommand
-                    , "arguments: " <> T.PP.hsep (map T.PP.text jobArgs)
-                    ]
-              | otherwise = mempty
+            JobRequest {..} = jobRequest
 
-            prettyJobState Queued = T.PP.blue "queued"
-            prettyJobState (Running _) = T.PP.green "running"
-            prettyJobState (Finished ExitSuccess) = T.PP.cyan "running"
-            prettyJobState (Finished _) = T.PP.red "running"
+            twoCols :: Int -> [(Doc, Doc)] -> Doc
+            twoCols width =
+                T.PP.vcat . map (\(a,b) -> T.PP.fillBreak width a <+> b)
 
+            header =
+                T.PP.fillBreak 5 (prettyJobId jobId)
+                <+> prettyJobName jobName
+                <+> T.PP.indent 50 (prettyJobState Queued)
+
+            details =
+                T.PP.indent 4 $ twoCols 15
+                [ ("priority:",  prettyPriority jobPriority)
+                , ("command:",   T.PP.text jobCommand)
+                , ("arguments:", T.PP.hsep $ map T.PP.text jobArgs)
+                , ("status:",    T.PP.text "hello")
+                ]
+                T.PP.<$$> mempty
+
+    prettyJobState Queued       = T.PP.blue "queued"
+    prettyJobState (Running _)  = T.PP.green "running"
+    prettyJobState (Finished ExitSuccess) = T.PP.cyan "finished"
+    prettyJobState (Finished _) = T.PP.yellow "exited unsuccessfully"
+    prettyJobState (Failed)     = T.PP.red "failed"
+
+    prettyJobId (JobId n)        = T.PP.int n
     prettyJobName (JobName name) = T.PP.text name
     prettyPriority (Priority p)  = T.PP.int p
 

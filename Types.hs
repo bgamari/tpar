@@ -30,7 +30,7 @@ data ServerIface =
     ServerIface { serverPid :: ProcessId
                 , enqueueJob  :: RpcSendPort (JobRequest, Maybe (SinkPort ProcessOutput ExitCode)) JobId
                 , requestJob  :: RpcSendPort () (Job, SendPort ExitCode)
-                , getQueueStatus :: RpcSendPort () [JobRequest]
+                , getQueueStatus :: RpcSendPort () [Job]
                 }
     deriving (Generic)
 

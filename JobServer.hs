@@ -93,8 +93,8 @@ server jobQueue = do
                   return ()
 
             , matchRpc getQueueStatusRp $ \() -> do
-                  q <- liftIO $ getQueuedJobs jobQueue
-                  return (map jobRequest q, ())
+                  q <- liftIO $ atomically $ getJobs jobQueue
+                  return (q, ())
             ]
     return $ ServerIface {..}
 
@@ -165,8 +165,6 @@ queueJob (JobQueue {..}) jobId jobSink jobRequest = do
   where
     prio = jobPriority jobRequest
 
-getQueuedJobs :: JobQueue -> IO [Job]
-getQueuedJobs (JobQueue {..}) = atomically $ do
-    jobIds <- map H.payload . toList <$> readTVar jobQueue
-    jobsMap <- readTVar jobs
-    return $ map (jobsMap M.!) jobIds
+getJobs :: JobQueue -> STM [Job]
+getJobs (JobQueue {..}) =
+    M.elems <$> readTVar jobs
