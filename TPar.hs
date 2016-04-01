@@ -168,7 +168,7 @@ modeShowQueue =
             header =
                 T.PP.fillBreak 5 (prettyJobId jobId)
                 <+> prettyJobName jobName
-                <+> T.PP.indent 50 (prettyJobState Queued)
+                <+> T.PP.indent 50 (prettyJobState jobState)
 
             details =
                 T.PP.indent 4 $ twoCols 15
