@@ -170,11 +170,11 @@ modeStatus =
     run serverHost serverPort verbose match =
         withServer serverHost serverPort $ \iface -> do
             jobs <- callRpc (getQueueStatus iface) match
-            liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob verbose) jobs
+            liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob verbose) jobs ++ [mempty]
 
 prettyJob :: Bool -> Job -> Doc
 prettyJob verbose (Job {..}) =
-    T.PP.vcat $ [header] ++ (if verbose then [details] else []) ++ [mempty]
+    T.PP.vcat $ [header] ++ (if verbose then [details] else [])
   where
     JobRequest {..} = jobRequest
 
@@ -223,7 +223,7 @@ modeKill =
     run serverHost serverPort match =
         withServer serverHost serverPort $ \iface -> do
             jobs <- callRpc (killJobs iface) match
-            liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False) jobs
+            liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False) jobs ++ [mempty]
             liftIO $ when (null jobs) $ exitWith $ ExitFailure 1
 
 main :: IO ()
