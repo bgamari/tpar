@@ -1,10 +1,12 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-import qualified Text.PrettyPrint.ANSI.Leijen as T.PP
 import Control.Monad (when, forever, replicateM_)
 import Control.Monad.IO.Class
 import Control.Error
+import System.Exit
+
+import qualified Text.PrettyPrint.ANSI.Leijen as T.PP
 import qualified Network.Transport.TCP as TCP
 import Network.Socket (ServiceName, HostName)
 import Options.Applicative
@@ -167,12 +169,13 @@ modeShowQueue =
                     ]
               | otherwise = mempty
 
-            prettyJobState Queued = T.PP.green "queued"
+            prettyJobState Queued = T.PP.blue "queued"
+            prettyJobState (Running _) = T.PP.green "running"
+            prettyJobState (Finished ExitSuccess) = T.PP.cyan "running"
+            prettyJobState (Finished _) = T.PP.red "running"
 
     prettyJobName (JobName name) = T.PP.text name
     prettyPriority (Priority p)  = T.PP.int p
-
-data JobState = Queued
 
 main :: IO ()
 main = do

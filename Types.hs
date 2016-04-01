@@ -14,8 +14,13 @@ import ProcessPipe
 import Rpc
 import RemoteStream
 
-data Job = Job { jobSink    :: Maybe (SinkPort ProcessOutput ExitCode)
+newtype JobId = JobId Int
+              deriving (Eq, Ord, Show, Binary)
+
+data Job = Job { jobId      :: !JobId
+               , jobSink    :: Maybe (SinkPort ProcessOutput ExitCode)
                , jobRequest :: JobRequest
+               , jobState   :: !JobState
                }
          deriving (Generic)
 
@@ -23,8 +28,8 @@ instance Binary Job
 
 data ServerIface =
     ServerIface { serverPid :: ProcessId
-                , enqueueJob  :: RpcSendPort (JobRequest, Maybe (SinkPort ProcessOutput ExitCode)) ()
-                , requestJob  :: RpcSendPort () Job
+                , enqueueJob  :: RpcSendPort (JobRequest, Maybe (SinkPort ProcessOutput ExitCode)) JobId
+                , requestJob  :: RpcSendPort () (Job, SendPort ExitCode)
                 , getQueueStatus :: RpcSendPort () [JobRequest]
                 }
     deriving (Generic)
@@ -34,8 +39,8 @@ instance Binary ServerIface
 newtype JobName = JobName String
                 deriving (Show, Eq, Ord, Binary)
 
-data JobRequest = JobRequest { jobName     :: JobName
-                             , jobPriority :: Priority
+data JobRequest = JobRequest { jobName     :: !JobName
+                             , jobPriority :: !Priority
                              , jobCommand  :: FilePath
                              , jobArgs     :: [String]
                              , jobCwd      :: FilePath
@@ -47,3 +52,11 @@ instance Binary JobRequest
 
 newtype Priority = Priority Int
                  deriving (Eq, Ord, Show, Binary)
+
+data JobState = Queued
+              | Running ProcessId
+              | Finished ExitCode
+              | Failed
+              deriving (Show, Generic)
+
+instance Binary JobState

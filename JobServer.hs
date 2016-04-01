@@ -19,6 +19,7 @@ import qualified Data.ByteString as BS
 import Data.Foldable
 import Control.Monad (forever, filterM)
 import qualified Data.Heap as H
+import qualified Data.Map as M
 import Control.Distributed.Process
 
 import System.IO (Handle, hClose, hSetBuffering, BufferMode(NoBuffering))
@@ -47,8 +48,16 @@ sshWorker host rootPath req = do
 
 runRemoteWorker :: ServerIface -> Process ()
 runRemoteWorker (ServerIface {..}) = forever $ do
-    job <- callRpc requestJob ()
-    runJobWithWorker job localWorker
+    (job, finishedSp) <- callRpc requestJob ()
+    code <- runJobWithWorker job localWorker
+    sendChan finishedSp code
+
+runJobWithWorker :: Job -> Worker -> Process ExitCode
+runJobWithWorker (Job {..}) worker =
+    let intoSink = case jobSink of
+                     Just sink -> connectSink sink
+                     Nothing   -> \src -> runEffect $ src >-> PP.drain
+    in intoSink $ worker jobRequest
 
 -- | Spawn a process running a server
 runServer :: Process ServerIface
@@ -68,53 +77,96 @@ server jobQueue = do
     (requestJob, requestJobRp) <- newRpc
     (getQueueStatus, getQueueStatusRp) <- newRpc
 
-    serverPid <- spawnLocal $ forever $ do
+    serverPid <- spawnLocal $ void $ forever $ do
         serverPid <- getSelfPid
         receiveWait
             [ matchRpc enqueueJobRp $ \(jobReq, dataStream) -> do
                   liftIO $ traceEventIO "Ben: enqueue"
-                  liftIO $ pushJob jobQueue (Job dataStream jobReq)
-                  return ((), ())
-            , matchRpc' requestJobRp $ \() reply -> do
+                  liftIO $ atomically $ do
+                      jobId <- getFreshJobId jobQueue
+                      queueJob jobQueue jobId dataStream jobReq
+                      return (jobId, ())
+
+            , matchRpc' requestJobRp $ \ workerPid () reply -> do
                   liftIO $ traceEventIO "Ben: request job"
-                  spawnLocal $ do
-                      link serverPid
-                      job <- liftIO $ takeJob jobQueue
-                      reply job
-                      liftIO $ traceEventIO "Ben: job sent"
+                  spawnLocal $ handleJobRequest serverPid jobQueue workerPid reply
                   return ()
+
             , matchRpc getQueueStatusRp $ \() -> do
                   q <- liftIO $ getQueuedJobs jobQueue
                   return (map jobRequest q, ())
             ]
     return $ ServerIface {..}
 
--- | Our job queue
-newtype JobQueue = JobQueue (TVar (H.Heap (H.Entry Priority Job)))
+handleJobRequest :: ProcessId
+                 -> JobQueue
+                 -> ProcessId
+                 -> ((Job, SendPort ExitCode) -> Process ())
+                 -> Process ()
+handleJobRequest serverPid jobQueue workerPid reply = do
+    -- get a job
+    link serverPid
+    job <- liftIO $ atomically $ takeQueuedJob jobQueue
+
+    -- send the job to worker
+    (finishedSp, finishedRp) <- newChan
+    reply (job, finishedSp)
+    let jobid = jobId job
+    liftIO $ atomically $ setJobState jobQueue jobid (Running workerPid)
+    liftIO $ traceEventIO "Ben: job sent"
+
+    -- wait for result
+    code <- receiveChan finishedRp
+    liftIO $ atomically $ setJobState jobQueue jobid (Finished code)
+
+-----------------------------------------------------
+-- primitives
+
+-- | Our job queue state
+data JobQueue = JobQueue { freshJobIds :: TVar [JobId]
+                         , jobQueue    :: TVar (H.Heap (H.Entry Priority JobId))
+                         , jobs        :: TVar (M.Map JobId Job)
+                         }
+
+getFreshJobId :: JobQueue -> STM JobId
+getFreshJobId (JobQueue {..}) = do
+    x:xs <- readTVar freshJobIds
+    writeTVar freshJobIds xs
+    return x
 
 newJobQueue :: IO JobQueue
-newJobQueue = JobQueue <$> atomically (newTVar H.empty)
+newJobQueue = JobQueue <$> newTVarIO [ JobId i | i <- [0..] ]
+                       <*> newTVarIO H.empty
+                       <*> newTVarIO mempty
 
-takeJob :: JobQueue -> IO Job
-takeJob (JobQueue qVar) = atomically $ do
-    q <- readTVar qVar
+takeQueuedJob :: JobQueue -> STM Job
+takeQueuedJob jq@(JobQueue {..}) = do
+    q <- readTVar jobQueue
     case H.viewMin q of
-        Just (job, q') -> writeTVar qVar q' >> return (H.payload job)
-        Nothing        -> retry
+        Nothing -> retry
+        Just (H.Entry _ jobid, q') -> do
+            writeTVar jobQueue q'
+            getJob jq jobid
 
-pushJob :: JobQueue -> Job -> IO ()
-pushJob (JobQueue qVar) job =
-    atomically $ modifyTVar qVar $ H.insert (H.Entry prio job)
+getJob :: JobQueue -> JobId -> STM Job
+getJob (JobQueue {..}) jobId = (M.! jobId) <$> readTVar jobs
+
+setJobState :: JobQueue -> JobId -> JobState -> STM ()
+setJobState (JobQueue {..}) jobId newState =
+    modifyTVar jobs $ M.alter setState jobId
   where
-    prio = jobPriority $ jobRequest job
+    setState (Just s) = Just $ s { jobState = newState }
+    setState _        = error "setJobState: unknown JobId"
+
+queueJob :: JobQueue -> JobId -> Maybe (SinkPort ProcessOutput ExitCode) -> JobRequest -> STM ()
+queueJob (JobQueue {..}) jobId jobSink jobRequest = do
+    modifyTVar jobQueue $ H.insert (H.Entry prio jobId)
+    modifyTVar jobs $ M.insert jobId (Job {jobState = Queued, ..})
+  where
+    prio = jobPriority jobRequest
 
 getQueuedJobs :: JobQueue -> IO [Job]
-getQueuedJobs (JobQueue qVar) =
-    map (\(H.Entry _ x) -> x). toList <$> atomically (readTVar qVar)
-
-runJobWithWorker :: Job -> Worker -> Process ExitCode
-runJobWithWorker (Job {..}) worker =
-    let intoSink = case jobSink of
-                     Just sink -> connectSink sink
-                     Nothing   -> \src -> runEffect $ src >-> PP.drain
-    in intoSink $ worker jobRequest
+getQueuedJobs (JobQueue {..}) = atomically $ do
+    jobIds <- map H.payload . toList <$> readTVar jobQueue
+    jobsMap <- readTVar jobs
+    return $ map (jobsMap M.!) jobIds

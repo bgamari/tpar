@@ -25,13 +25,20 @@ callRpc (RpcSendPort sp) x = do
 
 matchRpc :: (Serializable a, Serializable b)
          => RpcRecvPort a b -> (a -> Process (b, c)) -> Match c
-matchRpc rp handler = matchRpc' rp $ \x reply -> do
+matchRpc rp handler = matchRpc' rp $ \_ x reply -> do
     (y, z) <- handler x
     reply y
     return z
 
+type RpcHandler a b c
+    = ProcessId          -- ^ 'ProcessId' of the requestor
+   -> a                  -- ^ arguments
+   -> (b -> Process ())  -- ^ reply action
+   -> Process c          -- ^ return
+
 -- | Allow deferred replies
 matchRpc' :: (Serializable a, Serializable b)
-          => RpcRecvPort a b -> (a -> (b -> Process ()) -> Process c) -> Match c
+          => RpcRecvPort a b -> RpcHandler a b c -> Match c
 matchRpc' (RpcRecvPort rp) handler = matchChan rp $ \(x, reply_sp) -> do
-    handler x (sendChan reply_sp)
+    let requestor_pid = sendPortProcessId $ sendPortId reply_sp
+    handler requestor_pid x (sendChan reply_sp)
