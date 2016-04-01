@@ -53,7 +53,7 @@ tparParser =
                           $ fullDesc <> progDesc "Start a worker")
      <> command "enqueue" ( info modeEnqueue
                           $ fullDesc <> progDesc "Enqueue a job")
-     <> command "status"  ( info modeShowQueue
+     <> command "status"  ( info modeStatus
                           $ fullDesc <> progDesc "Show queue status")
      <> command "kill"    ( info modeKill
                           $ fullDesc <> progDesc "Kill or dequeue a job")
@@ -159,8 +159,8 @@ liftTrifecta parser = do
         TT.Success a   -> return a
         TT.Failure err -> fail $ show err
 
-modeShowQueue :: Parser Mode
-modeShowQueue =
+modeStatus :: Parser Mode
+modeStatus =
     run <$> hostOption idm
         <*> portOption (help "server port number")
         <*> switch (short 'v' <> long "verbose" <> help "verbose queue status")
