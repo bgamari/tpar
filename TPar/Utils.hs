@@ -4,7 +4,7 @@ import Control.Monad.IO.Class
 import Debug.Trace
 
 debugEnabled :: Bool
-debugEnabled = True
+debugEnabled = False
 
 tparDebug :: MonadIO m => String -> m ()
 tparDebug _ | not debugEnabled = return ()
