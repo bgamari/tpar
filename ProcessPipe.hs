@@ -42,8 +42,10 @@ processPipes cmd args cwd env = do
 interleave :: forall a. [Producer a Process ()] -> Producer a Process ()
 interleave producers = do
     inputs <- lift $ forM producers $ \prod -> do
-        (output, input) <- liftIO $ PC.spawn (PC.bounded 100)
-        spawnLocal $ runEffect $ prod >-> PC.toOutput output
+        (output, input, seal) <- liftIO $ PC.spawn' (PC.bounded 10)
+        spawnLocal $ runEffect $ do
+            prod >-> PC.toOutput output
+            liftIO $ atomically seal
         return input
     PC.fromInput $ msum inputs
 
