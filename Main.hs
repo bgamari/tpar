@@ -65,10 +65,17 @@ withServer' host port action = do
     let nid :: NodeId
         nid = NodeId (TCP.encodeEndPointAddress host port 0)
     -- request server interface
-    linkNode nid
+    mref <- monitorNode nid
     (sq, rq) <- newChan :: Process (SendPort ServerIface, ReceivePort ServerIface)
     nsendRemote nid "tpar" sq
-    iface <- receiveChan rq
+    iface <- receiveWait
+        [ matchIf (\(NodeMonitorNotification ref _ _) -> ref == mref) $
+          \(NodeMonitorNotification _ _ reason) ->
+          case reason of
+              DiedDisconnect -> fail "Failed to connect. Are you sure there is a server running?"
+              _              -> fail $ show reason
+        , matchChan rq pure
+        ]
 
     -- request server interface
     link (serverPid iface)
