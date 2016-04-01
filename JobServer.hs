@@ -32,6 +32,7 @@ import Rpc
 import RemoteStream
 import ProcessPipe
 import Types
+import Debug.Trace
 
 type Worker = JobRequest -> Producer ProcessOutput Process ExitCode
 
@@ -72,13 +73,16 @@ server jobQueue = do
         serverPid <- getSelfPid
         receiveWait
             [ matchRpc enqueueJobRp $ \(jobReq, dataStream) -> do
+                  liftIO $ traceEventIO "Ben: enqueue"
                   liftIO $ pushJob jobQueue (Job dataStream jobReq)
                   return ((), ())
             , matchRpc' requestJobRp $ \() reply -> do
+                  liftIO $ traceEventIO "Ben: request job"
                   spawnLocal $ do
                       link serverPid
                       job <- liftIO $ takeJob jobQueue
                       reply job
+                      liftIO $ traceEventIO "Ben: job sent"
                   return ()
             , matchRpc getQueueStatusRp $ \() -> do
                   q <- liftIO $ getQueuedJobs jobQueue

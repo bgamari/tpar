@@ -24,6 +24,7 @@ import Data.Binary
 import Data.Binary.Put
 import Data.Binary.Get
 import GHC.Generics
+import Debug.Trace
 
 processPipes :: MonadIO m
              => FilePath                -- ^ Executable name
@@ -66,8 +67,15 @@ instance Binary ExitCode where
 runProcess :: FilePath -> [String] -> Maybe FilePath
            -> Producer ProcessOutput Process ExitCode
 runProcess cmd args cwd = do
+    liftIO $ traceEventIO "Ben: starting process"
     (stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args cwd Nothing
-    interleave [ stderr >-> PP.map PutStderr
-               , stdout >-> PP.map PutStdout
-               ]
-    liftIO (waitForProcess phandle)
+    liftIO $ traceEventIO "Ben: process running"
+    interleave [ stderr >-> PP.map PutStderr >-> traceIt "Ben: stderr"
+               , stdout >-> PP.map PutStdout >-> traceIt "Ben: stdout"
+               ] >-> traceIt "Ben: output"
+    liftIO $ traceEventIO "Ben: interleave done"
+    r <- liftIO (waitForProcess phandle)
+    liftIO $ traceEventIO "Ben: process done"
+    pure r
+
+traceIt msg = PP.mapM $ \x -> liftIO (traceEventIO msg) >> pure x

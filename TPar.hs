@@ -8,6 +8,7 @@ import Control.Concurrent (threadDelay)
 import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (NodeId(..))
 import Control.Distributed.Process.Node
+import Debug.Trace
 
 import JobClient
 import JobServer
@@ -116,9 +117,12 @@ modeEnqueue =
                                     , jobCwd      = "."
                                     , jobEnv      = Nothing
                                     }
+            liftIO $ traceEventIO "Ben: starting"
             prod <- watchJob iface jobReq
+            liftIO $ traceEventIO "Ben: watching"
             when watch $ do
               code <- watchStatus prod
+              liftIO $ traceEventIO "Ben: watched"
               liftIO $ putStrLn $ "exited with code "++show code
     run _ _ _ _ _ _ = fail "Expected command line"
 

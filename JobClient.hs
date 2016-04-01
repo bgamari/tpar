@@ -15,6 +15,7 @@ import RemoteStream
 import Rpc
 import ProcessPipe
 import Types
+import Debug.Trace
 
 watchJob :: ServerIface -> JobRequest
          -> Process (Producer ProcessOutput Process ExitCode)
@@ -28,6 +29,7 @@ watchStatus = go
   where
     go prod = do
       status <- next prod
+      liftIO $ traceEventIO "Ben: watch message"
       case status of
         Right (x, prod') -> do
           liftIO $ case x of
