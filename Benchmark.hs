@@ -8,9 +8,10 @@ import Control.Concurrent.Async
 import Pipes
 import qualified Pipes.Prelude as PP
 
-import JobClient
-import JobServer
-import Types
+import TPar.JobClient
+import TPar.Server
+import TPar.Server.Types
+import TPar.Types
 
 singleNode :: IO ()
 singleNode = do

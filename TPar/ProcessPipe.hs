@@ -1,9 +1,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module ProcessPipe ( ProcessOutput(..)
-                   , runProcess
-                   ) where
+module TPar.ProcessPipe ( ProcessOutput(..)
+                        , runProcess
+                        ) where
 
 import Control.Applicative
 import qualified Pipes.Prelude as PP

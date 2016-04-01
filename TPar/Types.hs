@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Types where
+module TPar.Types where
 
 import Control.Applicative
 import System.Exit
@@ -10,10 +10,8 @@ import Data.Binary
 import GHC.Generics
 import Control.Distributed.Process
 
-import ProcessPipe
-import Rpc
-import RemoteStream
-import JobMatch
+import TPar.ProcessPipe
+import TPar.RemoteStream
 
 newtype JobId = JobId Int
               deriving (Eq, Ord, Show, Binary)
@@ -26,16 +24,6 @@ data Job = Job { jobId      :: !JobId
          deriving (Generic)
 
 instance Binary Job
-
-data ServerIface =
-    ServerIface { serverPid :: ProcessId
-                , enqueueJob  :: RpcSendPort (JobRequest, Maybe (SinkPort ProcessOutput ExitCode)) JobId
-                , requestJob  :: RpcSendPort () (Job, SendPort ExitCode)
-                , getQueueStatus :: RpcSendPort JobMatch [Job]
-                }
-    deriving (Generic)
-
-instance Binary ServerIface
 
 newtype JobName = JobName String
                 deriving (Show, Eq, Ord, Binary)
@@ -58,6 +46,7 @@ data JobState = Queued
               | Running ProcessId
               | Finished ExitCode
               | Failed String
+              | Killed
               deriving (Show, Generic)
 
 instance Binary JobState

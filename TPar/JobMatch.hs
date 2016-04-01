@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module JobMatch where
+module TPar.JobMatch where
 
 import Data.Foldable (traverse_)
 import Control.Monad (void)
@@ -9,7 +9,7 @@ import Data.Binary
 import GHC.Generics
 import Text.Trifecta
 
-import Types
+import TPar.Types
 
 data GlobAtom = WildCard
               | Literal String
@@ -39,7 +39,7 @@ parseGlob = many $ wildCard <|> literal
 
 data JobMatch = NoMatch
               | AllMatch
-              | NameMatch (Glob Char)
+              | NameMatch Glob
               | JobIdMatch JobId
               | AltMatch JobMatch JobMatch
               deriving (Generic)
@@ -49,7 +49,8 @@ instance Binary JobMatch
 jobMatches :: JobMatch -> Job -> Bool
 jobMatches NoMatch            _   = False
 jobMatches AllMatch           _   = True
-jobMatches (NameMatch glob)   job = globMatches glob (jobName $ jobRequest job)
+jobMatches (NameMatch glob)   job = globMatches glob name
+  where JobName name = jobName $ jobRequest job
 jobMatches (JobIdMatch jobid) job = jobId job == jobid
 jobMatches (AltMatch x y)     job = jobMatches x job || jobMatches y job
 
@@ -57,7 +58,12 @@ parseJobMatch :: Parser JobMatch
 parseJobMatch =
     allMatch <|> nameMatch <|> jobIdMatch <|> altMatch
   where
+    allMatch :: Parser JobMatch
     allMatch = char '*' >> pure AllMatch
+    nameMatch :: Parser JobMatch
     nameMatch = do
-        "name="
-        NameMatch <$> betwen "\"" "\"" parseGlob
+        string "name="
+        NameMatch <$> between (char '"') (char '"') parseGlob
+    jobIdMatch :: Parser JobMatch
+    jobIdMatch = undefined
+    altMatch = undefined

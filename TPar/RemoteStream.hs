@@ -12,7 +12,7 @@
 -- * Neither side will return until both sides have the return value.
 -- * Each stream has at most one source process and one sink process
 --
-module RemoteStream where
+module TPar.RemoteStream where
 
 import Pipes
 import Control.Distributed.Process

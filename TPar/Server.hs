@@ -1,14 +1,15 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module JobServer ( -- * Workers
-                   Worker
-                 , localWorker
-                 , sshWorker
-                 , runRemoteWorker
-                   -- * Running
-                 , server
-                 , runServer
-                 ) where
+module TPar.Server
+    ( -- * Workers
+      Worker
+    , localWorker
+    , sshWorker
+    , runRemoteWorker
+      -- * Running
+    , server
+    , runServer
+    ) where
 
 import Control.Error
 import Control.Applicative
@@ -29,10 +30,12 @@ import Control.Concurrent.STM
 import Pipes
 import qualified Pipes.Prelude as PP
 
-import Rpc
-import RemoteStream
-import ProcessPipe
-import Types
+import TPar.Rpc
+import TPar.RemoteStream
+import TPar.ProcessPipe
+import TPar.Server.Types
+import TPar.Types
+import TPar.JobMatch
 import Debug.Trace
 
 type Worker = JobRequest -> Producer ProcessOutput Process ExitCode
@@ -127,6 +130,17 @@ handleJobRequest serverPid jobQueue workerPid reply = do
         ]
     unmonitor monRef
 
+{-
+data JobKilled = JobKilled
+
+killJobs :: JobQueue -> JobMatch -> Process ()
+killJobs jobQueue jobs = do
+    let shouldBeKilled :: Job -> Bool
+        shouldBeKilled (Job {..})
+          | Running pid <- jobState
+    liftIO $ atomically $ filter shouldBeKilled . M.elems <$> getJobs jobQueue
+    exit 
+-}
 
 -----------------------------------------------------
 -- primitives

@@ -1,6 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Rpc where
+module TPar.Rpc where
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable

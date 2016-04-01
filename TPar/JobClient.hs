@@ -1,6 +1,6 @@
-module JobClient ( watchJob
-                 , watchStatus
-                 ) where
+module TPar.JobClient ( watchJob
+                      , watchStatus
+                      ) where
 
 import Control.Monad.IO.Class
 import Control.Error
@@ -11,10 +11,11 @@ import Pipes
 
 import Control.Distributed.Process
 
-import RemoteStream
-import Rpc
-import ProcessPipe
-import Types
+import TPar.RemoteStream as RemoteStream
+import TPar.Rpc
+import TPar.ProcessPipe
+import TPar.Server.Types
+import TPar.Types
 import Debug.Trace
 
 watchJob :: ServerIface -> JobRequest
