@@ -59,7 +59,7 @@ runRemoteWorker (ServerIface {..}) = forever runOneJob
         -- We run each process in a separate thread to ensure that ProcessKilled
         -- exceptions go to the wrong job.
         let finished = liftIO $ atomically $ putTMVar doneVar ()
-        spawnLocal $ finally finished $ do
+        spawnLocal $ flip finally finished $ do
             (job, finishedSp) <- callRpc requestJob ()
             code <- runJobWithWorker job localWorker
             sendChan finishedSp code
