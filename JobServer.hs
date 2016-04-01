@@ -55,21 +55,21 @@ printExcept action = runExceptT action >>= either (liftIO . errLn) return
 
 runServer :: Process ServerIface
 runServer = do
-    q <- liftIO $ newJobQueue
-    (serverPid, iface) <- server q
+    q <- liftIO newJobQueue
+    iface <- server q
     announce <- spawnLocal $ forever $ do
         x <- expect :: Process (SendPort ServerIface)
         sendChan x iface
     register "tpar" announce
     return iface
 
-server :: JobQueue -> Process (ProcessId, ServerIface)
+server :: JobQueue -> Process ServerIface
 server jobQueue = do
     (enqueueJob, enqueueJobRp) <- newRpc
     (requestJob, requestJobRp) <- newRpc
     (getQueueStatus, getQueueStatusRp) <- newRpc
 
-    pid <- spawnLocal $ forever $ do
+    serverPid <- spawnLocal $ forever $ do
         serverPid <- getSelfPid
         receiveWait
             [ matchRpc enqueueJobRp $ \(jobReq, dataStream) -> do
@@ -88,7 +88,7 @@ server jobQueue = do
                   q <- liftIO $ getQueuedJobs jobQueue
                   return (map jobRequest q, ())
             ]
-    return (pid, ServerIface {..})
+    return $ ServerIface {..}
 
 newtype JobQueue = JobQueue (TVar (H.Heap (H.Entry Priority Job)))
 

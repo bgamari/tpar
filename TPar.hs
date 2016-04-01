@@ -55,10 +55,16 @@ withServer' :: HostName -> ServiceName
 withServer' host port action = do
     let nid :: NodeId
         nid = NodeId (TCP.encodeEndPointAddress host port 0)
+    linkNode nid
     (sq, rq) <- newChan :: Process (SendPort ServerIface, ReceivePort ServerIface)
     nsendRemote nid "tpar" sq
     iface <- receiveChan rq
-    action iface
+
+    link (serverPid iface)
+    unlinkNode nid
+    r <- action iface
+    unlink (serverPid iface)
+    return r
 
 withServer :: HostName -> ServiceName
            -> (ServerIface -> Process ()) -> IO ()

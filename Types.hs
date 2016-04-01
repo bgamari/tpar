@@ -22,7 +22,8 @@ data Job = Job { jobSink    :: Maybe (SinkPort ProcessOutput ExitCode)
 instance Binary Job
 
 data ServerIface =
-    ServerIface { enqueueJob  :: RpcSendPort (JobRequest, Maybe (SinkPort ProcessOutput ExitCode)) ()
+    ServerIface { serverPid :: ProcessId
+                , enqueueJob  :: RpcSendPort (JobRequest, Maybe (SinkPort ProcessOutput ExitCode)) ()
                 , requestJob  :: RpcSendPort () Job
                 , getQueueStatus :: RpcSendPort () [JobRequest]
                 }
