@@ -15,17 +15,17 @@ module TPar.Server
 
 import Control.Error
 import Control.Applicative
-import Control.Monad (void)
+import Control.Monad (void, forever, filterM)
 import Data.Binary
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Foldable
 import Data.Traversable
-import Control.Monad (forever, filterM)
 import qualified Data.Heap as H
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Control.Distributed.Process
+import Control.Monad.Catch (finally, bracket)
+import Control.Distributed.Process hiding (finally, bracket)
 
 import System.IO ( Handle, openFile, hClose, IOMode(..)
                  , hSetBuffering, BufferMode(NoBuffering))
