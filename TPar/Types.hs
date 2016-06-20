@@ -50,10 +50,16 @@ newtype Priority = Priority Int
                  deriving (Eq, Ord, Show, Binary)
 
 data JobState = Queued
+                -- ^ the job is waiting to be run
               | Running ProcessId
+                -- ^ the job currently running on the worker with the given
+                -- 'ProcessId'
               | Finished ExitCode
+                -- ^ the job has finished with the given 'ExitCode'
               | Failed String
+                -- ^ something happened to the worker which was running the job
               | Killed
+                -- ^ the job was manually killed
               deriving (Show, Generic)
 
 instance Binary JobState
