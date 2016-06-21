@@ -117,7 +117,7 @@ parseJobState =
     <|> (string "failed"    *> pure IsFailed)
     <|> (string "killed"    *> pure IsKilled)
   where
-    exitCode = (? "exit code") $ do
+    exitCode = (<?> "exit code") $ do
       n <- integer
       pure $ case n of
                0 -> ExitSuccess
