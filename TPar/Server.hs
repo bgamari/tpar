@@ -15,10 +15,7 @@ module TPar.Server
 
 import Control.Error
 import Control.Applicative
-import Control.Monad (void, forever, filterM)
-import Data.Binary
-import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
+import Control.Monad (void, forever)
 import Data.Foldable
 import Data.Traversable
 import qualified Data.Heap as H
@@ -27,8 +24,7 @@ import qualified Data.Set as S
 import Control.Monad.Catch (finally, bracket)
 import Control.Distributed.Process hiding (finally, bracket)
 
-import System.IO ( Handle, openFile, hClose, IOMode(..)
-                 , hSetBuffering, BufferMode(NoBuffering))
+import System.IO ( openFile, hClose, IOMode(..))
 import System.Exit
 import Control.Concurrent.STM
 
@@ -173,8 +169,6 @@ handleJobRequest serverPid jobQueue workerPid reply = do
               liftIO $ atomically $ setJobState jobQueue jobid (Failed $ show reason)
         ]
     unmonitor monRef
-
-data JobKilled = JobKilled
 
 handleKillJobs :: JobQueue -> JobMatch -> Process [Job]
 handleKillJobs jq@(JobQueue {..}) match = do

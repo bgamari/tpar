@@ -3,7 +3,7 @@
 
 import Control.Monad (when, forever, replicateM_, void)
 import Control.Monad.IO.Class
-import Control.Error
+import Control.Error hiding (err)
 import System.Exit
 import System.IO (stderr, stdout)
 
@@ -165,8 +165,8 @@ modeEnqueue =
                <*> option str (short 'e' <> long "error" <> metavar "FILE"
                                <> help "file to place stderr in")
           where
-            go stdout stderr iface jobReq =
-                void $ callRpc (enqueueJob iface) (jobReq, ToFiles stdout stderr)
+            go stdoutPath stderrPath iface jobReq =
+                void $ callRpc (enqueueJob iface) (jobReq, ToFiles stdoutPath stderrPath)
 
         remoteSink =
             switch (short 'w' <> long "watch" <> help "Watch output of task")
