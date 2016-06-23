@@ -24,7 +24,6 @@ import Pipes
 import Pipes.Safe () -- for MonadCatch instance
 import qualified Pipes.Concurrent as PC
 import System.Process (runInteractiveProcess, ProcessHandle, waitForProcess, terminateProcess)
-import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Distributed.Process
 import Control.Monad.Catch (handle, throwM)
