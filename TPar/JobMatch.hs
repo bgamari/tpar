@@ -83,7 +83,7 @@ stateMatches _                        _                = False
 
 parseJobMatch :: Parser JobMatch
 parseJobMatch =
-    AltMatch <$> (negMatch <|> nameMatch <|> jobIdMatch <|> stateMatch) `sepBy1` char ','
+    AltMatch <$> (allMatch <|> negMatch <|> nameMatch <|> jobIdMatch <|> stateMatch) `sepBy1` char ','
   where
     allMatch :: Parser JobMatch
     allMatch = char '*' >> pure AllMatch
