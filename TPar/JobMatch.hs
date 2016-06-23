@@ -65,6 +65,7 @@ instance Binary StateMatch
 jobMatches :: JobMatch -> Job -> Bool
 jobMatches NoMatch            _   = False
 jobMatches AllMatch           _   = True
+jobMatches (NegMatch m)       job = not $ jobMatches m job
 jobMatches (NameMatch glob)   job = globMatches glob name
   where JobName name = jobName $ jobRequest job
 jobMatches (JobIdMatch jobid) job = jobId job == jobid
