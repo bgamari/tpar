@@ -46,7 +46,7 @@ enqueueAndFollow :: ServerIface -> JobRequest
                  -> Process (Producer ProcessOutput Process ExitCode)
 enqueueAndFollow iface jobReq = do
     (sink, src) <- RemoteStream.newStream
-    callRpc (enqueueJob iface) (jobReq, ToRemoteSink sink)
+    _jobId <- callRpc (enqueueJob iface) (jobReq, ToRemoteSink sink)
     return $ RemoteStream.toProducer src
 
 -----------------------------------------------
@@ -69,12 +69,14 @@ runRemoteWorker (ServerIface {..}) = forever runOneJob
     runOneJob = do
         doneVar <- liftIO newEmptyTMVarIO
         -- We run each process in a separate thread to ensure that ProcessKilled
-        -- exceptions go to the wrong job.
+        -- exceptions go to the Process that is actually running the job being
+        -- killed
         let finished = liftIO $ atomically $ putTMVar doneVar ()
-        spawnLocal $ flip finally finished $ do
+        _pid <- spawnLocal $ flip finally finished $ do
             (job, finishedSp) <- callRpc requestJob ()
             code <- runJobWithWorker job localWorker
             sendChan finishedSp code
+
         liftIO $ atomically $ takeTMVar doneVar
 
 runJobWithWorker :: Job -> Worker -> Process ExitCode
