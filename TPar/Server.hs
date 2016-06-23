@@ -87,11 +87,14 @@ runJobWithWorker (Job {..}) worker =
                      ToRemoteSink sink -> connectSink sink
                      NoOutput          -> \src -> runEffect $ src >-> PP.drain
                      ToFiles so se     -> \src ->
-                         withOutFile so $ \hStdout ->
-                         withOutFile se $ \hStderr ->
+                         withOutFiles so se $ \hStdout hStderr ->
                          processOutputToHandles hStdout hStderr src
     in intoSink $ worker jobRequest
   where
+    withOutFiles outPath errPath action
+      | outPath == errPath = withOutFile outPath $ \h -> action h h
+      | otherwise          = withOutFile outPath $ \out ->
+                             withOutFile errPath $ \err -> action out err
     withOutFile path = bracket (liftIO $ openFile path WriteMode) (liftIO . hClose)
 
 ------------------------------------------------
