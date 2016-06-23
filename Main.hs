@@ -19,7 +19,6 @@ import Control.Distributed.Process.Node
 import qualified Text.Trifecta as TT
 
 import TPar.Rpc
-import TPar.RemoteStream as RemoteStream
 import TPar.ProcessPipe (processOutputToHandles)
 import TPar.Server
 import TPar.Server.Types
@@ -33,8 +32,8 @@ portOption m =
           <> value "5757" <> m
            )
 
-hostOption :: Mod OptionFields String -> Parser HostName
-hostOption m =
+hostOption :: Parser HostName
+hostOption =
     strOption ( short 'H' <> long "host" <> value "localhost" <> help "server host name" )
 
 type Mode = IO ()
@@ -93,7 +92,7 @@ withServer host port action = do
 
 modeWorker :: Parser Mode
 modeWorker =
-    run <$> hostOption idm
+    run <$> hostOption
         <*> portOption (help "server port number")
         <*> option (Just <$> (auto <|> pure 10))
                    ( short 'r' <> long "reconnect" <> metavar "SECONDS" <> value Nothing
@@ -127,7 +126,7 @@ modeServer =
 
 modeEnqueue :: Parser Mode
 modeEnqueue =
-    run <$> hostOption idm
+    run <$> hostOption
         <*> portOption (help "server port number")
         <*> sinkType
         <*> option (JobName <$> str)
@@ -190,7 +189,7 @@ liftTrifecta parser = do
 
 modeStatus :: Parser Mode
 modeStatus =
-    run <$> hostOption idm
+    run <$> hostOption
         <*> portOption (help "server port number")
         <*> switch (short 'v' <> long "verbose" <> help "verbose queue status")
         <*> (argument (liftTrifecta parseJobMatch) (help "filter jobs") <|> pure AllMatch)
@@ -244,7 +243,7 @@ prettyJob verbose (Job {..}) =
 
 modeKill :: Parser Mode
 modeKill =
-    run <$> hostOption idm
+    run <$> hostOption
         <*> portOption (help "server port number")
         <*> argument (liftTrifecta parseJobMatch) (help "jobs to kill")
         <*  helper
