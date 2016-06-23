@@ -186,7 +186,7 @@ liftTrifecta parser = do
     s <- str
     case TT.parseString parser mempty s of
         TT.Success a   -> return a
-        TT.Failure err -> fail $ show err
+        TT.Failure err -> fail $ show $ TT._errDoc err
 
 modeStatus :: Parser Mode
 modeStatus =
