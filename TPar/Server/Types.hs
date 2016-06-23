@@ -7,17 +7,15 @@ import Data.Binary
 import System.Exit
 import GHC.Generics
 
-import TPar.ProcessPipe
 import TPar.Rpc
-import TPar.RemoteStream
 import TPar.JobMatch
 import TPar.Types
 
 data ServerIface =
-    ServerIface { serverPid :: ProcessId
-                , enqueueJob  :: RpcSendPort (JobRequest, OutputSink) JobId
-                , requestJob  :: RpcSendPort () (Job, SendPort ExitCode)
-                , killJobs    :: RpcSendPort JobMatch [Job]
+    ServerIface { serverPid      :: ProcessId
+                , enqueueJob     :: RpcSendPort (JobRequest, OutputSink) JobId
+                , requestJob     :: RpcSendPort () (Job, SendPort ExitCode)
+                , killJobs       :: RpcSendPort JobMatch [Job]
                 , getQueueStatus :: RpcSendPort JobMatch [Job]
                 }
     deriving (Generic)
