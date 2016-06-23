@@ -4,6 +4,8 @@
 import Control.Monad (when, forever, replicateM_, void)
 import Control.Monad.IO.Class
 import Control.Error hiding (err)
+import Data.Time.Clock
+import Data.Time.Format.Human
 import System.Exit
 import System.IO (stderr, stdout)
 
@@ -198,17 +200,19 @@ modeStatus =
     run serverHost serverPort verbose match =
         withServer serverHost serverPort $ \iface -> do
             jobs <- callRpc (getQueueStatus iface) match
-            liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob verbose) jobs ++ [mempty]
+            time <- liftIO getCurrentTime
+            let prettyTime = T.PP.text . humanReadableTime' time
+            liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob verbose prettyTime) jobs ++ [mempty]
 
-prettyJob :: Bool -> Job -> Doc
-prettyJob verbose (Job {..}) =
+prettyJob :: Bool -> (UTCTime -> Doc) -> Job -> Doc
+prettyJob verbose prettyTime (Job {..}) =
     T.PP.vcat $ [header] ++ (if verbose then [details] else [])
   where
     JobRequest {..} = jobRequest
 
     twoCols :: Int -> [(Doc, Doc)] -> Doc
     twoCols width =
-        T.PP.vcat . map (\(a,b) -> T.PP.fillBreak width a <+> b)
+        T.PP.vcat . map (\(a,b) -> T.PP.fillBreak width a <+> T.PP.align b)
 
     header =
         T.PP.fillBreak 5 (prettyJobId jobId)
@@ -218,7 +222,7 @@ prettyJob verbose (Job {..}) =
     details =
         T.PP.indent 4 $ twoCols 15
         [ ("priority:",  prettyPriority jobPriority)
-        , ("queued at:", prettyTime (jobQueueTime jobState))
+        , ("queued:",    prettyTime (jobQueueTime jobState))
         , ("command:",   T.PP.text jobCommand)
         , ("arguments:", T.PP.hsep $ map T.PP.text jobArgs)
         , ("status:",    prettyDetailedState jobState)
@@ -227,9 +231,10 @@ prettyJob verbose (Job {..}) =
 
     prettyDetailedState Queued{..}    = "waiting to run" <+> T.PP.parens ("since" <+> prettyTime jobQueueTime)
     prettyDetailedState Running{..}   = "running on" <+> prettyShow jobProcessId <+> T.PP.parens ("since" <+> prettyTime jobStartTime)
-    prettyDetailedState Finished{..}  = "finished with" <+> prettyShow (getExitCode jobExitCode) <+> T.PP.parens ("at" <+> prettyTime jobFinishTime)
-    prettyDetailedState Failed{..}    = "failed with error:" <+> T.PP.text jobErrorMsg <+> T.PP.parens ("at" <+> prettyTime jobFailedTime)
-    prettyDetailedState Killed{..}    = "killed at user request" <+> T.PP.parens ("at" <+> prettyTime jobKilledTime)
+    prettyDetailedState Finished{..}  = "finished with" <+> prettyShow (getExitCode jobExitCode) <+> T.PP.parens (prettyTime jobFinishTime)
+    prettyDetailedState Failed{..}    = "failed with error" <+> T.PP.parens (prettyTime jobFailedTime)
+                                        T.PP.<$$> T.PP.indent 4 (T.PP.text jobErrorMsg)
+    prettyDetailedState Killed{..}    = "killed at user request" <+> T.PP.parens (prettyTime jobKilledTime)
 
     prettyJobState Queued{}           = T.PP.blue "queued"
     prettyJobState Running{}          = T.PP.green "running"
@@ -243,12 +248,11 @@ prettyJob verbose (Job {..}) =
     prettyJobName (JobName name) = T.PP.text name
     prettyPriority (Priority p)  = T.PP.int p
 
-    prettyShow :: Show a => a -> Doc
-    prettyShow = T.PP.text . show
-    prettyTime = T.PP.text . show
-
     getExitCode ExitSuccess     = 0
     getExitCode (ExitFailure c) = c
+
+prettyShow :: Show a => a -> Doc
+prettyShow = T.PP.text . show
 
 modeKill :: Parser Mode
 modeKill =
@@ -260,7 +264,7 @@ modeKill =
     run serverHost serverPort match =
         withServer serverHost serverPort $ \iface -> do
             jobs <- callRpc (killJobs iface) match
-            liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False) jobs ++ [mempty]
+            liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False prettyShow) jobs ++ [mempty]
             liftIO $ when (null jobs) $ exitWith $ ExitFailure 1
 
 main :: IO ()
