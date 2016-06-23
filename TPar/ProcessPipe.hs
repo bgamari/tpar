@@ -51,9 +51,11 @@ interleave :: forall a. [Producer a Process ()] -> Producer a Process ()
 interleave producers = do
     inputs <- lift $ forM producers $ \prod -> do
         (output, input, seal) <- liftIO $ PC.spawn' (PC.bounded 10)
-        spawnLocal $ runEffect $ do
+        pid <- spawnLocal $ runEffect $ do
             prod >-> PC.toOutput output
             liftIO $ atomically seal
+
+        link pid
         return input
     PC.fromInput $ msum inputs
 
