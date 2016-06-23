@@ -90,21 +90,21 @@ parseJobMatch =
 
     nameMatch :: Parser JobMatch
     nameMatch = do
-        string "name="
+        void $ string "name="
         NameMatch <$> between (char '"') (char '"') parseGlob
 
     stateMatch :: Parser JobMatch
     stateMatch = do
-        string "state="
+        void $ string "state="
         StateMatch <$> parseJobState
 
     jobIdMatch :: Parser JobMatch
     jobIdMatch = do
-        string "id="
+        void $ string "id="
         JobIdMatch . JobId . fromIntegral <$> integer
 
     negMatch = do
-        char '!'
+        void $ char '!'
         NegMatch <$> between (char '(') (char ')') parseJobMatch
 
 parseJobState :: Parser StateMatch
