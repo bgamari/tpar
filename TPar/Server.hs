@@ -76,6 +76,7 @@ runRemoteWorker (ServerIface {..}) = forever runOneJob
         let finished = liftIO $ atomically $ putTMVar doneVar ()
         _pid <- spawnLocal $ flip finally finished $ do
             (job, finishedSp) <- callRpc requestJob ()
+            tparDebug $ "have job "++show (jobId job)
             code <- runJobWithWorker job localWorker
             sendChan finishedSp code
 
@@ -146,7 +147,7 @@ server jobQueue = do
             ]
     return $ ServerIface {..}
 
-handleJobRequest :: ProcessId
+handleJobRequest :: ProcessId            -- ^ the 'ProcessId' of the server's message loop
                  -> JobQueue
                  -> ProcessId
                  -> ((Job, SendPort ExitCode) -> Process ())
@@ -171,6 +172,7 @@ handleJobRequest serverPid jobQueue workerPid reply = do
         [ matchChan finishedRp $ \jobExitCode -> do
               jobFinishTime <- liftIO getCurrentTime
               liftIO $ atomically $ setJobState jobQueue jobid (Finished {..})
+
         , matchIf (\(ProcessMonitorNotification ref _ _) -> ref == monRef) $
           \(ProcessMonitorNotification _ _ reason) -> do
               tparDebug $ "job "++show jobid++" failed"
