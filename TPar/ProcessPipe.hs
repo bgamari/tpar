@@ -47,6 +47,13 @@ processPipes cmd args cwd env = do
     (stdin, stdout, stderr, phandle) <- runInteractiveProcess cmd args cwd env
     return (PBS.toHandle stdin, PBS.fromHandle stdout, PBS.fromHandle stderr, phandle)
 
+data InterleaverCanTerminate = InterleaverCanTerminate deriving (Generic)
+instance Binary InterleaverCanTerminate
+
+data InterleaveException = InterleaveException String
+                         deriving (Show)
+instance Exception InterleaveException
+
 interleave :: forall a. [Producer a Process ()] -> Producer a Process ()
 interleave producers = do
     inputs <- lift $ forM producers $ \prod -> do
@@ -55,9 +62,21 @@ interleave producers = do
             prod >-> PC.toOutput output
             liftIO $ atomically seal
 
-        link pid
+        _ <- monitor pid
         return input
-    PC.fromInput $ msum inputs
+
+    let matchTermination = match $ \(ProcessMonitorNotification _ pid reason) ->
+                                     case reason of
+                                       DiedNormal -> return Nothing
+                                       _          -> throwM $ InterleaveException $ show reason
+        matchData = matchSTM (PC.recv $ msum inputs) pure
+        go :: Producer a Process ()
+        go = do
+            mx <- lift $ receiveWait [ matchTermination, matchData ]
+            case mx of
+              Nothing -> return ()
+              Just x -> yield x >> go
+    go
 
 data ProcessOutput
     = PutStdout !ByteString
