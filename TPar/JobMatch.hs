@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module TPar.JobMatch where
 
@@ -73,13 +74,13 @@ jobMatches (AltMatch alts)    job = any (`jobMatches` job) alts
 jobMatches (StateMatch s)     job = stateMatches s (jobState job)
 
 stateMatches :: StateMatch -> JobState -> Bool
-stateMatches IsQueued                 Queued           = True
-stateMatches IsRunning                (Running _)      = True
-stateMatches (IsFinished Nothing)     (Finished _)     = True
-stateMatches (IsFinished (Just code)) (Finished code') = code == code'
-stateMatches IsFailed                 (Failed _)       = True
-stateMatches IsKilled                 Killed           = True
-stateMatches _                        _                = False
+stateMatches IsQueued                 Queued{}               = True
+stateMatches IsRunning                Running{}              = True
+stateMatches (IsFinished Nothing)     Finished{}             = True
+stateMatches (IsFinished (Just code)) Finished {jobExitCode} = code == jobExitCode
+stateMatches IsFailed                 Failed{}               = True
+stateMatches IsKilled                 Killed{}               = True
+stateMatches _                        _                      = False
 
 parseJobMatch :: Parser JobMatch
 parseJobMatch =

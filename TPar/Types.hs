@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module TPar.Types where
 
@@ -9,6 +10,8 @@ import System.Exit
 import Data.Binary
 import GHC.Generics
 import Control.Distributed.Process
+import Data.Time.Clock
+import Data.Time.Calendar
 
 import TPar.ProcessPipe
 import TPar.RemoteStream
@@ -49,17 +52,46 @@ instance Binary JobRequest
 newtype Priority = Priority Int
                  deriving (Eq, Ord, Show, Binary)
 
-data JobState = Queued
+data JobState = Queued { jobQueueTime    :: !UTCTime }
                 -- ^ the job is waiting to be run
-              | Running ProcessId
+              | Running { jobProcessId   :: !ProcessId
+                        , jobQueueTime   :: !UTCTime
+                        , jobStartTime   :: !UTCTime }
                 -- ^ the job currently running on the worker with the given
                 -- 'ProcessId'
-              | Finished ExitCode
+              | Finished { jobExitCode   :: !ExitCode
+                         , jobQueueTime  :: !UTCTime
+                         , jobStartTime  :: !UTCTime
+                         , jobFinishTime :: !UTCTime }
                 -- ^ the job has finished with the given 'ExitCode'
-              | Failed String
+              | Failed { jobErrorMsg     :: !String
+                       , jobQueueTime    :: !UTCTime
+                       , jobStartTime    :: !UTCTime
+                       , jobFailedTime   :: !UTCTime }
                 -- ^ something happened to the worker which was running the job
-              | Killed
+              | Killed { jobQueueTime    :: !UTCTime
+                       , jobKilledStartTime :: !(Maybe UTCTime)
+                       , jobKilledTime   :: !UTCTime }
                 -- ^ the job was manually killed
               deriving (Show, Generic)
 
+jobMaybeStartTime :: JobState -> Maybe UTCTime
+jobMaybeStartTime (Queued{})     = Nothing
+jobMaybeStartTime (Running{..})  = Just jobStartTime
+jobMaybeStartTime (Finished{..}) = Just jobStartTime
+jobMaybeStartTime (Failed{..})   = Just jobStartTime
+jobMaybeStartTime (Killed{..})   = jobKilledStartTime
+
 instance Binary JobState
+
+instance Binary DiffTime where
+    get = picosecondsToDiffTime <$> get
+    put = put . diffTimeToPicoseconds
+
+instance Binary Day where
+    get = ModifiedJulianDay <$> get
+    put = put . toModifiedJulianDay
+
+instance Binary UTCTime where
+    get = UTCTime <$> get <*> get
+    put (UTCTime a b) = put a >> put b

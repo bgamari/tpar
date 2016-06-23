@@ -218,28 +218,37 @@ prettyJob verbose (Job {..}) =
     details =
         T.PP.indent 4 $ twoCols 15
         [ ("priority:",  prettyPriority jobPriority)
+        , ("queued at:", prettyTime (jobQueueTime jobState))
         , ("command:",   T.PP.text jobCommand)
         , ("arguments:", T.PP.hsep $ map T.PP.text jobArgs)
         , ("status:",    prettyDetailedState jobState)
         ]
         T.PP.<$$> mempty
 
-    prettyDetailedState Queued                = "waiting to run"
-    prettyDetailedState (Running node)        = "running on" <+> T.PP.text (show node)
-    prettyDetailedState (Finished code)       = "finished with" <+> T.PP.text (show code)
-    prettyDetailedState (Failed err)          = "failed with error:" <+> T.PP.text err
-    prettyDetailedState Killed                = "killed at user request"
+    prettyDetailedState Queued{..}    = "waiting to run" <+> T.PP.parens ("since" <+> prettyTime jobQueueTime)
+    prettyDetailedState Running{..}   = "running on" <+> prettyShow jobProcessId <+> T.PP.parens ("since" <+> prettyTime jobStartTime)
+    prettyDetailedState Finished{..}  = "finished with" <+> prettyShow (getExitCode jobExitCode) <+> T.PP.parens ("at" <+> prettyTime jobFinishTime)
+    prettyDetailedState Failed{..}    = "failed with error:" <+> T.PP.text jobErrorMsg <+> T.PP.parens ("at" <+> prettyTime jobFailedTime)
+    prettyDetailedState Killed{..}    = "killed at user request" <+> T.PP.parens ("at" <+> prettyTime jobKilledTime)
 
-    prettyJobState Queued                     = T.PP.blue "queued"
-    prettyJobState (Running _)                = T.PP.green "running"
-    prettyJobState (Finished ExitSuccess)     = T.PP.cyan "finished"
-    prettyJobState (Finished (ExitFailure c)) = T.PP.yellow $ "finished"<+>T.PP.parens (T.PP.int c)
-    prettyJobState (Failed _)                 = T.PP.red "failed"
-    prettyJobState Killed                     = T.PP.yellow "killed"
+    prettyJobState Queued{}           = T.PP.blue "queued"
+    prettyJobState Running{}          = T.PP.green "running"
+    prettyJobState Finished{..}
+      | ExitFailure c <- jobExitCode  = T.PP.yellow $ "finished"
+      | otherwise                     = T.PP.cyan "finished"
+    prettyJobState Failed{}           = T.PP.red "failed"
+    prettyJobState Killed{}           = T.PP.yellow "killed"
 
     prettyJobId (JobId n)        = T.PP.int n
     prettyJobName (JobName name) = T.PP.text name
     prettyPriority (Priority p)  = T.PP.int p
+
+    prettyShow :: Show a => a -> Doc
+    prettyShow = T.PP.text . show
+    prettyTime = T.PP.text . show
+
+    getExitCode ExitSuccess     = 0
+    getExitCode (ExitFailure c) = c
 
 modeKill :: Parser Mode
 modeKill =

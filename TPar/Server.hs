@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module TPar.Server
     ( -- * Workers
@@ -23,6 +24,7 @@ import qualified Data.Map as M
 import qualified Data.Set as S
 import Control.Monad.Catch (finally, bracket)
 import Control.Distributed.Process hiding (finally, bracket)
+import Data.Time.Clock
 
 import System.IO ( openFile, hClose, IOMode(..))
 import System.Exit
@@ -122,9 +124,10 @@ server jobQueue = do
         receiveWait
             [ matchRpc enqueueJobRp $ \(jobReq, dataStream) -> do
                   tparDebug "enqueue"
+                  jobQueueTime <- liftIO getCurrentTime
                   liftIO $ atomically $ do
                       jobId <- getFreshJobId jobQueue
-                      queueJob jobQueue jobId dataStream jobReq
+                      queueJob jobQueue jobId jobQueueTime dataStream jobReq
                       return (jobId, ())
 
             , matchRpc' requestJobRp $ \ workerPid () reply -> do
@@ -158,17 +161,22 @@ handleJobRequest serverPid jobQueue workerPid reply = do
     (finishedSp, finishedRp) <- newChan
     reply (job, finishedSp)
     let jobid = jobId job
-    liftIO $ atomically $ setJobState jobQueue jobid (Running workerPid)
+        Queued {jobQueueTime} = jobState job
+    jobStartTime <- liftIO getCurrentTime
+    liftIO $ atomically $ setJobState jobQueue jobid (Running { jobProcessId = workerPid, .. })
     tparDebug $ "job "++show jobid++" sent"
 
     -- wait for result
     receiveWait
-        [ matchChan finishedRp $ \code -> do
-              liftIO $ atomically $ setJobState jobQueue jobid (Finished code)
+        [ matchChan finishedRp $ \jobExitCode -> do
+              jobFinishTime <- liftIO getCurrentTime
+              liftIO $ atomically $ setJobState jobQueue jobid (Finished {..})
         , matchIf (\(ProcessMonitorNotification ref _ _) -> ref == monRef) $
           \(ProcessMonitorNotification _ _ reason) -> do
               tparDebug $ "job "++show jobid++" failed"
-              liftIO $ atomically $ setJobState jobQueue jobid (Failed $ show reason)
+              jobFailedTime <- liftIO getCurrentTime
+              let jobErrorMsg = show reason
+              liftIO $ atomically $ setJobState jobQueue jobid (Failed {..})
         ]
     unmonitor monRef
 
@@ -176,28 +184,29 @@ handleKillJobs :: JobQueue -> JobMatch -> Process [Job]
 handleKillJobs jq@(JobQueue {..}) match = do
     let shouldBeKilled :: Job -> Maybe (Maybe ProcessId, JobId)
         shouldBeKilled job@(Job {..})
-          | Running pid <- jobState
-          , jobMatches match job    = Just (Just pid, jobId)
-          | Queued      <- jobState
+          | Running {..} <- jobState
+          , jobMatches match job    = Just (Just jobProcessId, jobId)
+          | Queued {..}  <- jobState
           , jobMatches match job    = Just (Nothing, jobId)
           | otherwise               = Nothing
     jobsToKill <- liftIO $ atomically $ mapMaybe shouldBeKilled <$> getJobs jq
     say $ "killing "++show jobsToKill
+    jobKilledTime <- liftIO getCurrentTime
     killed <- forM jobsToKill $ \(pid, jobid) -> do
         maybe (return ()) (flip exit ProcessKilled) pid
         liftIO $ atomically $ do
             oldState <- updateJob jq jobid $ \job ->
-                ( case jobState job of
-                    Finished _ -> job
-                    _          -> job {jobState=Killed}
-                , jobState job
-                )
+              let state' = case jobState job of
+                             Queued {..}     -> Killed { jobKilledStartTime = Nothing, ..}
+                             Running {..}    -> Killed { jobKilledStartTime = Just jobStartTime, .. }
+                             s               -> s
+              in (job {jobState=state'}, jobState job)
             case oldState of
-                Queued    -> do
+                Queued {}  -> do
                     modifyTVar jobQueue $ H.fromList . filter (\(_, job') -> job' /= jobid) . toList
                     return $ Just jobid
-                Running _ -> return $ Just jobid
-                _         -> return Nothing
+                Running {} -> return $ Just jobid
+                _          -> return Nothing
     let killedSet = S.fromList $ catMaybes killed
     liftIO $ atomically $ filter (\job -> jobId job `S.member` killedSet) <$> getJobs jq
 
@@ -245,10 +254,10 @@ setJobState :: JobQueue -> JobId -> JobState -> STM ()
 setJobState jobQueue jobId newState =
     updateJob jobQueue jobId (\s -> (s {jobState = newState}, ()))
 
-queueJob :: JobQueue -> JobId -> OutputSink -> JobRequest -> STM ()
-queueJob (JobQueue {..}) jobId jobSink jobRequest = do
+queueJob :: JobQueue -> JobId -> UTCTime -> OutputSink -> JobRequest -> STM ()
+queueJob (JobQueue {..}) jobId jobQueueTime jobSink jobRequest = do
     modifyTVar jobQueue $ H.insert (prio, jobId)
-    modifyTVar jobs $ M.insert jobId (Job {jobState = Queued, ..})
+    modifyTVar jobs $ M.insert jobId (Job {jobState = Queued {..}, ..})
   where
     prio = jobPriority jobRequest
 
