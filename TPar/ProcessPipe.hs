@@ -85,7 +85,7 @@ instance Exception ProcessKilled
 runProcess :: FilePath -> [String] -> Maybe FilePath
            -> Producer ProcessOutput Process ExitCode
 runProcess cmd args cwd = do
-    tparDebug "starting process"
+    lift $ tparDebug "starting process"
     (stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args cwd Nothing
     let processKilled ProcessKilled = liftIO $ do
             terminateProcess phandle

@@ -1,15 +1,12 @@
 module TPar.Utils where
 
-import Control.Monad.IO.Class
-import Debug.Trace
+import Control.Distributed.Process
 
 debugEnabled :: Bool
 debugEnabled = False
 
-tparDebug :: MonadIO m => String -> m ()
+tparDebug :: String -> Process ()
 tparDebug _ | not debugEnabled = return ()
-tparDebug s = liftIO $ do
-    putStrLn s'
-    traceEventIO s'
+tparDebug s = say s'
   where
      s' = "tpar: "++s
