@@ -161,14 +161,15 @@ handleJobRequest serverPid jobQueue workerPid reply = do
     reply (job, finishedSp)
     let jobid = jobId job
     liftIO $ atomically $ setJobState jobQueue jobid (Running workerPid)
-    tparDebug "job sent"
+    tparDebug $ "job "++show jobid++" sent"
 
     -- wait for result
     receiveWait
         [ matchChan finishedRp $ \code -> do
               liftIO $ atomically $ setJobState jobQueue jobid (Finished code)
-        , matchIf (\(PortMonitorNotification ref _ _) -> ref == monRef) $
-          \(PortMonitorNotification _ _ reason) -> do
+        , matchIf (\(ProcessMonitorNotification ref _ _) -> ref == monRef) $
+          \(ProcessMonitorNotification _ _ reason) -> do
+              tparDebug $ "job "++show jobid++" failed"
               liftIO $ atomically $ setJobState jobQueue jobid (Failed $ show reason)
         ]
     unmonitor monRef
