@@ -113,8 +113,9 @@ modeWorker =
       | otherwise = fail "Worker count (-N) should be at least one"
 
     run nWorkers serverHost serverPort reconnect =
-        replicateM_ nWorkers $ perhapsRepeat
-            $ withServer serverHost serverPort runRemoteWorker
+        perhapsRepeat $ withServer serverHost serverPort $ \serverIface -> do
+            replicateM_ nWorkers $ spawnLocal $ runRemoteWorker serverIface
+            liftIO $ forever threadDelay maxBound
       where
         perhapsRepeat action
           | Just period <- reconnect =
