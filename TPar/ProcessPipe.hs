@@ -88,12 +88,12 @@ instance Binary ProcessOutput
 -- Unfortunate orphan
 instance Binary ExitCode where
     get = do
-        code <- getWord32le
+        code <- getInt32le
         return $ case code of
           0  -> ExitSuccess
           _  -> ExitFailure (fromIntegral code)
-    put ExitSuccess        = putWord32le 0
-    put (ExitFailure code) = putWord32le (fromIntegral code)
+    put ExitSuccess        = putInt32le 0
+    put (ExitFailure code) = putInt32le (fromIntegral code)
 
 data ProcessKilled = ProcessKilled
                    deriving (Show, Generic)
