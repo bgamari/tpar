@@ -94,7 +94,11 @@ withServer host port action = do
 
 modeWorker :: Parser Mode
 modeWorker =
-    run <$> hostOption
+    run <$> option (auto >>= checkNWorkers)
+                        ( short 'N' <> long "workers" <> value 1
+                       <> help "number of local workers to start"
+                        )
+        <*> hostOption
         <*> portOption (help "server port number")
         <*> option (Just <$> (auto <|> pure 10))
                    ( short 'r' <> long "reconnect" <> metavar "SECONDS" <> value Nothing
@@ -102,8 +106,13 @@ modeWorker =
                    )
         <*  helper
   where
-    run serverHost serverPort reconnect =
-        perhapsRepeat $ withServer serverHost serverPort runRemoteWorker
+    checkNWorkers n
+      | n >= 1 = return n
+      | otherwise = fail "Worker count (-N) should be at least one"
+
+    run nWorkers serverHost serverPort reconnect =
+        replicateM_ nWorkers $ perhapsRepeat
+            $ withServer serverHost serverPort runRemoteWorker
       where
         perhapsRepeat action
           | Just period <- reconnect =
