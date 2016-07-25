@@ -121,14 +121,16 @@ modeWorker =
 
 modeServer :: Parser Mode
 modeServer =
-    run <$> portOption (help "server port number")
+    run <$> option str (short 'H' <> long "host" <> value "*"
+                        <> help "interface address to listen on" )
+        <*> portOption (help "port to listen on")
         <*> option auto ( short 'N' <> long "workers" <> value 0
                        <> help "number of local workers to start"
                         )
         <*  helper
   where
-    run serverPort nLocalWorkers = do
-        Right transport <- TCP.createTransport "localhost" serverPort TCP.defaultTCPParameters
+    run serverHost serverPort nLocalWorkers = do
+        Right transport <- TCP.createTransport serverHost serverPort TCP.defaultTCPParameters
         node <- newLocalNode transport initRemoteTable
         runProcess node $ do
             iface <- runServer
