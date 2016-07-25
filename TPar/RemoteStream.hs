@@ -18,6 +18,7 @@ import Pipes
 import Control.Distributed.Process
 import Control.Distributed.Process.Serializable
 import Data.Binary
+import TPar.Utils
 
 newtype SinkPort a r = SinkPort (SendPort (Either r a))
                      deriving (Binary)
@@ -43,10 +44,14 @@ connectSink (SinkPort sp) prod0 = do
     myPid <- getSelfPid
     let srcPid = sendPortProcessId $ sendPortId sp
     send srcPid (RequestConnection myPid)
+    tparDebug "Sent RequestConnection"
     ConnectionAccepted () <- expect
+    tparDebug "Have connection accepted"
     r <- go prod0
+    tparDebug "Sending EverythingSent"
     EverythingSent () <- expect    -- wait until completion confirmation
     unlinkPort sp
+    tparDebug "Sending Done"
     send srcPid (Done ())
     return r
   where
@@ -65,13 +70,19 @@ connectSink (SinkPort sp) prod0 = do
 toProducer :: (Serializable a, Serializable r)
            => SourcePort a r -> Producer a Process r
 toProducer (SourcePort rp) = do
+    lift $ tparDebug "Waiting for RequestConnection"
     RequestConnection srcPid <- lift expect
     lift $ link srcPid
+    lift $ tparDebug "Sending ConnectionAccepted"
     lift $ send srcPid (ConnectionAccepted ())
+    lift $ tparDebug "In read loop"
     r <- go
+    lift $ tparDebug "Sending EverythingSent"
     lift $ send srcPid (EverythingSent ())
     lift $ unlink srcPid
+    lift $ tparDebug "Waitin for all done"
     Done () <- lift expect
+    lift $ tparDebug "All done"
     return r
   where
     go = do
