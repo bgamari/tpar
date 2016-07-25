@@ -13,6 +13,7 @@ import qualified Text.PrettyPrint.ANSI.Leijen as T.PP
 import Text.PrettyPrint.ANSI.Leijen (Doc, (<+>))
 import qualified Network.Transport.TCP as TCP
 import Network.Socket (ServiceName, HostName)
+import Network.BSD (getHostName)
 import Options.Applicative
 import Control.Concurrent (threadDelay)
 import Control.Distributed.Process
@@ -88,7 +89,8 @@ withServer' host port action = do
 withServer :: HostName -> ServiceName
            -> (ServerIface -> Process ()) -> IO ()
 withServer host port action = do
-    Right transport <- TCP.createTransport "localhost" "0" TCP.defaultTCPParameters
+    hostname <- getHostName
+    Right transport <- TCP.createTransport hostname "0" TCP.defaultTCPParameters
     node <- newLocalNode transport initRemoteTable
     runProcess node $ withServer' host port action
 
