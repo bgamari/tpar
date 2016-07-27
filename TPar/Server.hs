@@ -16,7 +16,7 @@ module TPar.Server
 
 import Control.Error
 import Control.Applicative
-import Control.Monad (void, forever)
+import Control.Monad (void, forever, filterM)
 import Data.Foldable
 import Data.Traversable
 import qualified Data.Heap as H
@@ -119,6 +119,7 @@ server jobQueue = do
     (requestJob, requestJobRp) <- newRpc
     (getQueueStatus, getQueueStatusRp) <- newRpc
     (killJobs, killJobsRp) <- newRpc
+    (rerunJobs, rerunJobsRp) <- newRpc
 
     serverPid <- spawnLocal $ void $ forever $ do
         serverPid <- getSelfPid
@@ -144,6 +145,10 @@ server jobQueue = do
             , matchRpc killJobsRp $ \match -> do
                   killedJobs <- handleKillJobs jobQueue match
                   return (killedJobs, ())
+
+            , matchRpc rerunJobsRp $ \match -> do
+                  reran <- handleRerunJobs jobQueue match
+                  return (reran, ())
             ]
     return $ ServerIface {..}
 
@@ -212,6 +217,14 @@ handleKillJobs jq@(JobQueue {..}) match = do
     let killedSet = S.fromList $ catMaybes killed
     liftIO $ atomically $ filter (\job -> jobId job `S.member` killedSet) <$> getJobs jq
 
+handleRerunJobs :: JobQueue -> JobMatch -> Process [Job]
+handleRerunJobs jq@(JobQueue {..}) match = do
+    jobQueueTime <- liftIO getCurrentTime
+    liftIO $ atomically $ do
+        jobs <- getJobs jq
+        filterM (\job -> reEnqueueJob jq job jobQueueTime)
+            $ filter (jobMatches match) jobs
+
 -----------------------------------------------------
 -- primitives
 
@@ -255,6 +268,24 @@ updateJob (JobQueue {..}) jobId f = do
 setJobState :: JobQueue -> JobId -> JobState -> STM ()
 setJobState jobQueue jobId newState =
     updateJob jobQueue jobId (\s -> (s {jobState = newState}, ()))
+
+-- | Place a finished, failed, or killed job back on the run queue.
+-- Returns 'True' if re-queued.
+reEnqueueJob :: JobQueue -> Job -> UTCTime -> STM Bool
+reEnqueueJob jq Job{..} reEnqueueTime
+  | reQueuable = do
+      setJobState jq jobId (Queued reEnqueueTime)
+      modifyTVar (jobQueue jq) $ H.insert (jobPriority jobRequest, jobId)
+      return True
+  | otherwise = return False
+  where
+    reQueuable =
+      case jobState of
+        Queued {}   -> False
+        Running {}  -> False
+        Failed {}   -> True
+        Finished {} -> True
+        Killed {}   -> True
 
 queueJob :: JobQueue -> JobId -> UTCTime -> OutputSink -> JobRequest -> STM ()
 queueJob (JobQueue {..}) jobId jobQueueTime jobSink jobRequest = do

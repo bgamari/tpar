@@ -61,6 +61,8 @@ tparParser =
                           $ fullDesc <> progDesc "Show queue status")
      <> command "kill"    ( info modeKill
                           $ fullDesc <> progDesc "Kill or dequeue a job")
+     <> command "rerun"   ( info modeRerun
+                          $ fullDesc <> progDesc "Restart a failed job")
 
 withServer' :: HostName -> ServiceName
            -> (ServerIface -> Process a) -> Process a
@@ -280,6 +282,19 @@ modeKill =
     run serverHost serverPort match =
         withServer serverHost serverPort $ \iface -> do
             jobs <- callRpc (killJobs iface) match
+            liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False prettyShow) jobs ++ [mempty]
+            liftIO $ when (null jobs) $ exitWith $ ExitFailure 1
+
+modeRerun :: Parser Mode
+modeRerun =
+    run <$> hostOption
+        <*> portOption (help "server port number")
+        <*> argument (liftTrifecta parseJobMatch) (help "jobs to re-run")
+        <*  helper
+  where
+    run serverHost serverPort match =
+        withServer serverHost serverPort $ \iface -> do
+            jobs <- callRpc (rerunJobs iface) match
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False prettyShow) jobs ++ [mempty]
             liftIO $ when (null jobs) $ exitWith $ ExitFailure 1
 

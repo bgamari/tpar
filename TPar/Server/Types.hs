@@ -17,6 +17,7 @@ data ServerIface =
                 , requestJob     :: RpcSendPort () (Job, SendPort ExitCode)
                 , killJobs       :: RpcSendPort JobMatch [Job]
                 , getQueueStatus :: RpcSendPort JobMatch [Job]
+                , rerunJobs      :: RpcSendPort JobMatch [Job]
                 }
     deriving (Generic)
 
