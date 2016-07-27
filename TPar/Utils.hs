@@ -3,7 +3,7 @@ module TPar.Utils where
 import Control.Distributed.Process
 
 debugEnabled :: Bool
-debugEnabled = False
+debugEnabled = True
 
 tparDebug :: String -> Process ()
 tparDebug _ | not debugEnabled = return ()

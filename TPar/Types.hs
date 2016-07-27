@@ -20,7 +20,7 @@ newtype JobId = JobId Int
               deriving (Eq, Ord, Show, Binary)
 
 data Job = Job { jobId      :: !JobId
-               , jobSink    :: OutputSink
+               , jobSink    :: !OutputSink
                , jobRequest :: JobRequest
                , jobState   :: !JobState
                }
@@ -29,7 +29,6 @@ data Job = Job { jobId      :: !JobId
 instance Binary Job
 
 data OutputSink = NoOutput
-                | ToRemoteSink (SinkPort ProcessOutput ExitCode)
                 | ToFiles FilePath FilePath
                 deriving (Generic)
 
@@ -55,6 +54,7 @@ newtype Priority = Priority Int
 data JobState = Queued { jobQueueTime    :: !UTCTime }
                 -- ^ the job is waiting to be run
               | Running { jobProcessId   :: !ProcessId
+                        , jobMonitor     :: !(SendPort (SinkPort ProcessOutput ExitCode))
                         , jobQueueTime   :: !UTCTime
                         , jobStartTime   :: !UTCTime }
                 -- ^ the job currently running on the worker with the given
