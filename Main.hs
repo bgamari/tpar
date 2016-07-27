@@ -1,6 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+import Control.Monad.Catch
 import Control.Monad (when, forever, replicateM_, void)
 import Control.Monad.IO.Class
 import Control.Error hiding (err)
@@ -118,8 +119,9 @@ modeWorker =
             liftIO $ forever threadDelay maxBound
       where
         perhapsRepeat action
-          | Just period <- reconnect =
-                forever $ action >> liftIO (threadDelay period)
+          | Just period <- reconnect = forever $ do
+                handleAll (liftIO . print) action
+                liftIO (threadDelay $ 1000*1000*period)
           | otherwise                = action
 
 modeServer :: Parser Mode
