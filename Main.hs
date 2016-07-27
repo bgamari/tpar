@@ -126,7 +126,7 @@ modeWorker =
 
 modeServer :: Parser Mode
 modeServer =
-    run <$> option str (short 'H' <> long "host" <> value "*"
+    run <$> option str (short 'H' <> long "host" <> value "localhost"
                         <> help "interface address to listen on" )
         <*> portOption (help "port to listen on")
         <*> option auto ( short 'N' <> long "workers" <> value 0
