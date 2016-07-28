@@ -251,19 +251,32 @@ prettyJob verbose prettyTime (Job {..}) =
         ]
         T.PP.<$$> mempty
 
-    prettyDetailedState Queued{..}    = "waiting to run" <+> T.PP.parens ("since" <+> prettyTime jobQueueTime)
-    prettyDetailedState Starting{..}  = "starting on" <+> prettyShow jobProcessId <+> T.PP.parens ("since" <+> prettyTime jobStartingTime)
-    prettyDetailedState Running{..}   = "running on" <+> prettyShow jobProcessId <+> T.PP.parens ("since" <+> prettyTime jobStartTime)
-    prettyDetailedState Finished{..}  = "finished with" <+> prettyShow (getExitCode jobExitCode) <+> T.PP.parens (prettyTime jobFinishTime)
-    prettyDetailedState Failed{..}    = "failed with error" <+> T.PP.parens (prettyTime jobFailedTime)
-                                        T.PP.<$$> T.PP.indent 4 (T.PP.text jobErrorMsg)
-    prettyDetailedState Killed{..}    = "killed at user request" <+> T.PP.parens (prettyTime jobKilledTime)
+    prettyDetailedState Queued{..}    =
+        "waiting to run" <+> T.PP.parens ("since" <+> prettyTime jobQueueTime)
+    prettyDetailedState Starting{..}  =
+        "starting on" <+> prettyShow jobProcessId
+        <+> T.PP.parens ("since" <+> prettyTime jobStartingTime)
+    prettyDetailedState Running{..}   =
+        "running on" <+> prettyShow jobProcessId
+        <+> T.PP.parens ("since" <+> prettyTime jobStartTime)
+    prettyDetailedState Finished{..}  =
+        "finished with" <+> prettyShow (getExitCode jobExitCode)
+        <+> T.PP.parens ("at" <+> prettyTime jobFinishTime)
+        T.PP.<$$> "started at" <+> prettyShow jobStartTime
+        T.PP.<$$> "ran on" <+> prettyShow jobWorkerNode
+    prettyDetailedState Failed{..}    =
+        "failed with error" <+> T.PP.parens (prettyTime jobFailedTime)
+        T.PP.<$$> "started at" <+> prettyShow jobStartTime
+        T.PP.<$$> T.PP.indent 4 (T.PP.text jobErrorMsg)
+    prettyDetailedState Killed{..}    =
+        "killed at user request" <+> T.PP.parens (prettyTime jobKilledTime)
+        T.PP.<$$> "started at" <+> prettyShow jobKilledStartTime
 
     prettyJobState Queued{}           = T.PP.blue "queued"
     prettyJobState Starting{}         = T.PP.blue "starting"
     prettyJobState Running{}          = T.PP.green "running"
     prettyJobState Finished{..}
-      | ExitFailure c <- jobExitCode  = T.PP.yellow $ "finished"
+      | ExitFailure _ <- jobExitCode  = T.PP.yellow $ "finished"
       | otherwise                     = T.PP.cyan "finished"
     prettyJobState Failed{}           = T.PP.red "failed"
     prettyJobState Killed{}           = T.PP.yellow "killed"

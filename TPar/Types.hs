@@ -55,34 +55,52 @@ instance Binary JobRequest
 newtype Priority = Priority Int
                  deriving (Eq, Ord, Show, Binary)
 
-data JobState = Queued { jobQueueTime    :: !UTCTime }
-                -- ^ the job is waiting to be run
-              | Starting { jobProcessId  :: !ProcessId
-                         , jobQueueTime  :: !UTCTime
-                         , jobStartingTime :: !UTCTime
-                         }
-                -- ^ the job is currently starting on the given worker.
-              | Running { jobProcessId   :: !ProcessId
-                        , jobMonitor     :: !(SubPubSource ProcessOutput ExitCode)
-                        , jobQueueTime   :: !UTCTime
-                        , jobStartTime   :: !UTCTime }
-                -- ^ the job currently running on the worker with the given
-                -- 'ProcessId'
-              | Finished { jobExitCode   :: !ExitCode
-                         , jobQueueTime  :: !UTCTime
-                         , jobStartTime  :: !UTCTime
-                         , jobFinishTime :: !UTCTime }
-                -- ^ the job has finished with the given 'ExitCode'
-              | Failed { jobErrorMsg     :: !String
-                       , jobQueueTime    :: !UTCTime
-                       , jobStartTime    :: !UTCTime
-                       , jobFailedTime   :: !UTCTime }
-                -- ^ something happened to the worker which was running the job
-              | Killed { jobQueueTime    :: !UTCTime
-                       , jobKilledStartTime :: !(Maybe UTCTime)
-                       , jobKilledTime   :: !UTCTime }
-                -- ^ the job was manually killed
-              deriving (Show, Generic)
+data JobState
+    = -- | the job is waiting to be run
+      Queued { jobQueueTime    :: !UTCTime
+               -- ^ when was the job enqueued?
+             }
+
+      -- | the job is currently starting on the given worker.
+    | Starting { jobProcessId  :: !ProcessId
+                 -- ^ where is the job running?
+               , jobQueueTime  :: !UTCTime
+               , jobStartingTime :: !UTCTime
+                 -- ^ when did the job begin starting?
+               }
+      -- | the job currently running on the worker with the given 'ProcessId'
+    | Running { jobProcessId   :: !ProcessId
+              , jobMonitor     :: !(SubPubSource ProcessOutput ExitCode)
+                 -- ^ where can we monitor the job output?
+              , jobQueueTime   :: !UTCTime
+              , jobStartTime   :: !UTCTime
+              }
+      -- | the job has finished with the given 'ExitCode'
+    | Finished { jobExitCode   :: !ExitCode
+                 -- ^ what code did the job exit with?
+               , jobWorkerNode :: !NodeId
+                 -- ^ which node was the job running on?
+               , jobQueueTime  :: !UTCTime
+               , jobStartTime  :: !UTCTime
+               , jobFinishTime :: !UTCTime
+               }
+      -- | something happened to the worker which was running the job
+    | Failed { jobErrorMsg     :: !String
+             , jobWorkerNode   :: !NodeId
+             , jobQueueTime    :: !UTCTime
+             , jobStartTime    :: !UTCTime
+             , jobFailedTime   :: !UTCTime
+             }
+      -- | the job was manually killed (perhaps before it was even started)
+    | Killed { jobQueueTime    :: !UTCTime
+             , jobKilledWorkerNode :: !(Maybe NodeId)
+               -- ^ which node was the job running on
+             , jobKilledStartTime  :: !(Maybe UTCTime)
+               -- ^ when was the job started (if at all)
+             , jobKilledTime   :: !UTCTime
+               -- ^ when was the job killed
+             }
+    deriving (Show, Generic)
 
 jobMaybeStartTime :: JobState -> Maybe UTCTime
 jobMaybeStartTime (Queued{})     = Nothing

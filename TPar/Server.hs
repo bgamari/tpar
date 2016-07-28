@@ -215,6 +215,7 @@ handleJobRequest jobQueue workerPid reply = do
     reply (job, startedSp, finishedSp)
     let jobid = jobId job
         jobProcessId = workerPid
+        jobWorkerNode = processNodeId workerPid
         Queued {jobQueueTime} = jobState job
     jobStartingTime <- liftIO getCurrentTime
     liftIO $ atomically $ setJobState jobQueue jobid (Starting {..})
@@ -266,9 +267,15 @@ handleKillJobs jq@(JobQueue {..}) match = do
         liftIO $ atomically $ do
             oldState <- updateJob jq jobid $ \job ->
               let state' = case jobState job of
-                             Queued {..}     -> Killed { jobKilledStartTime = Nothing, ..}
-                             Running {..}    -> Killed { jobKilledStartTime = Just jobStartTime, .. }
-                             s               -> s
+                             Queued {..}  -> Killed { jobKilledStartTime = Nothing
+                                                    , jobKilledWorkerNode = Nothing
+                                                    , ..
+                                                    }
+                             Running {..} -> Killed { jobKilledStartTime = Just jobStartTime
+                                                    , jobKilledWorkerNode = Just $ processNodeId jobProcessId
+                                                    , ..
+                                                    }
+                             s            -> s
               in (job {jobState=state'}, jobState job)
             case oldState of
                 Queued {}  -> do
