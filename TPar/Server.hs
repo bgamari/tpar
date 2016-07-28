@@ -178,8 +178,8 @@ server jobQueue = do
                       queueJob jobQueue jobId jobQueueTime jobReq notifyOriginator
                       return (jobId, ())
 
-            , matchRpc' requestJobRp $ \ workerPid () reply -> do
-                  tparDebug "request job"
+            , matchRpc' requestJobRp $ \workerPid () reply -> do
+                  tparDebug $ "request job: "++show workerPid
                   spawnLocal $ do
                       link serverPid
                       handleJobRequest jobQueue workerPid reply
