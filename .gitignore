@@ -1,3 +1,7 @@
 dist
 dist-newstyle
 TAGS
+*.o
+*.hi
+*.p_hi
+*.p_o
