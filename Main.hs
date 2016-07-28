@@ -292,6 +292,9 @@ prettyJob verbose prettyTime (Job {..}) =
         , ("queued:",    prettyTime (jobQueueTime jobState))
         , ("command:",   T.PP.text jobCommand)
         , ("arguments:", T.PP.hsep $ map T.PP.text jobArgs)
+        , ("logging:",   T.PP.vcat $ toList $ (\x y -> x<>":"<+>y)
+                         <$> OutputStreams "stdout" "stderr"
+                         <*> fmap (maybe "none" T.PP.text) jobSinks)
         , ("status:",    prettyDetailedState jobState)
         ]
         <$$> mempty

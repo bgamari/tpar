@@ -13,11 +13,12 @@ module TPar.ProcessPipe ( ProcessOutput(..)
                         ) where
 
 import Control.Applicative
+import Data.Monoid
+import Data.Traversable
 import qualified Pipes.Prelude as PP
 import qualified Pipes.ByteString as PBS
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Traversable
 import Control.Monad (msum)
 import Control.Exception (Exception)
 import System.IO (Handle)
@@ -91,6 +92,11 @@ instance Binary ProcessOutput
 data OutputStreams a = OutputStreams { stdOut, stdErr :: a }
                      deriving (Show, Functor, Generic)
 instance Binary a => Binary (OutputStreams a)
+instance Foldable OutputStreams where
+    foldMap f (OutputStreams x y) = f x <> f y
+instance Applicative OutputStreams where
+    pure x = OutputStreams x x
+    OutputStreams f g <*> OutputStreams x y = OutputStreams (f x) (g y)
 
 -- Unfortunate orphan
 instance Binary ExitCode where
