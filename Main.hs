@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Control.Monad.Catch
-import Control.Monad (when, forever, replicateM_, void)
+import Control.Monad (when, forever, replicateM_)
 import Control.Monad.IO.Class
 import Control.Error hiding (err)
 import Data.Time.Clock
@@ -151,56 +151,57 @@ modeEnqueue =
     run <$> hostOption
         <*> portOption (help "server port number")
         <*> sinkType
+        <*> switch (short 'w' <> long "watch" <> help "Watch output of task")
         <*> option (JobName <$> str)
                    (short 'n' <> long "name" <> value (JobName "unnamed-job")
                     <> help "Set the job's name")
         <*> option str
                    (short 'd' <> long "directory" <> value "."
-                    <> help "Set the directory the job will be launched from (relative to the cwd of the worker who runs it)")
+                    <> help "Set the directory the job will be launched from (relative to the working directory of the worker who runs it)")
         <*> option (Priority <$> auto)
                    (short 'P' <> long "priority" <> value (Priority 0)
                     <> help "Set the job's priority")
         <*> some (argument str idm)
         <*  helper
   where
-    run serverHost serverPort runSink name dir priority (cmd:args) =
+    run :: HostName -> ServiceName
+        -> OutputSink -> Bool -> JobName -> FilePath -> Priority -> [String]
+        -> IO ()
+    run serverHost serverPort sink watch name dir priority (cmd:args) =
         withServer serverHost serverPort $ \iface -> do
             let jobReq = JobRequest { jobName     = name
                                     , jobPriority = priority
                                     , jobCommand  = cmd
                                     , jobArgs     = args
+                                    , jobSink     = sink
                                     , jobCwd      = dir
                                     , jobEnv      = Nothing
                                     }
-            runSink iface jobReq
-    run _ _ _ _ _ _ _ = fail "Expected command line"
-
-    sinkType :: Parser (ServerIface -> JobRequest -> Process ())
-    sinkType = remoteSink <|> files <|> noOutput
-      where
-        noOutput =
-            pure $ \iface jobReq -> void $ callRpc (enqueueJob iface) (jobReq, NoOutput)
-
-        files =
-            go <$> option str (short 'o' <> long "output" <> metavar "FILE"
-                               <> help "file to place stdout in")
-               <*> option str (short 'e' <> long "error" <> metavar "FILE"
-                               <> help "file to place stderr in")
-          where
-            go stdoutPath stderrPath iface jobReq =
-                void $ callRpc (enqueueJob iface) (jobReq, ToFiles stdoutPath stderrPath)
-
-        remoteSink =
-            switch (short 'w' <> long "watch" <> help "Watch output of task")
-            *> pure go
-          where
-            go iface jobReq = do
+            if watch
+              then do
                 prod <- enqueueAndFollow iface jobReq
                 code <- runEffect $ prod >-> P.P.mapM_ (processOutputToHandles stdout stderr)
                 case code of
                     ExitSuccess   -> return ()
                     ExitFailure n ->
                         liftIO $ putStrLn $ "exited with code "++show n
+              else do
+                Right _ <- callRpc (enqueueJob iface) (jobReq, Nothing)
+                return ()
+
+    run _ _ _ _ _ _ _ _ = fail "Expected command line"
+
+    sinkType :: Parser OutputSink
+    sinkType =
+        ToFiles
+          <$> option (Just <$> str)
+                     (short 'o' <> long "output" <> metavar "FILE"
+                     <> help "remote file to log standard output to"
+                     <> value Nothing)
+          <*> option (Just <$> str)
+                     (short 'e' <> long "error" <> metavar "FILE"
+                     <> help "remote file to log standard error to"
+                     <> value Nothing)
 
 liftTrifecta :: TT.Parser a -> ReadM a
 liftTrifecta parser = do
@@ -219,7 +220,7 @@ modeStatus =
   where
     run serverHost serverPort verbose match =
         withServer serverHost serverPort $ \iface -> do
-            jobs <- callRpc (getQueueStatus iface) match
+            Right jobs <- callRpc (getQueueStatus iface) match
             time <- liftIO getCurrentTime
             let prettyTime = T.PP.text . humanReadableTime' time
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob verbose prettyTime) jobs ++ [mempty]
@@ -285,7 +286,7 @@ modeKill =
   where
     run serverHost serverPort match =
         withServer serverHost serverPort $ \iface -> do
-            jobs <- callRpc (killJobs iface) match
+            Right jobs <- callRpc (killJobs iface) match
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False prettyShow) jobs ++ [mempty]
             liftIO $ when (null jobs) $ exitWith $ ExitFailure 1
 
@@ -298,7 +299,7 @@ modeRerun =
   where
     run serverHost serverPort match =
         withServer serverHost serverPort $ \iface -> do
-            jobs <- callRpc (rerunJobs iface) match
+            Right jobs <- callRpc (rerunJobs iface) match
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False prettyShow) jobs ++ [mempty]
             liftIO $ when (null jobs) $ exitWith $ ExitFailure 1
 

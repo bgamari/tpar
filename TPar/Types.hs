@@ -15,33 +15,42 @@ import Data.Time.Calendar
 
 import TPar.ProcessPipe
 import TPar.SubPubStream
+import TPar.Rpc
 
 newtype JobId = JobId Int
               deriving (Eq, Ord, Show, Binary)
 
 data Job = Job { jobId      :: !JobId
-               , jobSink    :: !OutputSink
                , jobRequest :: JobRequest
                , jobState   :: !JobState
+               , jobStartingNotify :: Maybe JobStartingNotify
+                 -- ^ Used to notify the originator that a
+                 -- 'SubPubSource' is available for the job.
                }
          deriving (Generic)
 
 instance Binary Job
 
-data OutputSink = NoOutput
-                | ToFiles FilePath FilePath
-                deriving (Generic)
-
+-- | A remote output sink.
+data OutputSink = ToFiles (Maybe FilePath) (Maybe FilePath)
+                deriving (Show, Generic)
 instance Binary OutputSink
 
 newtype JobName = JobName String
                 deriving (Show, Eq, Ord, Binary)
+
+-- | A RPC call provided with an enqueue request which is called before the job
+-- is started by the server. This is used to setup atomic watches. In the case
+-- that the task is re-enqueued, this procedure may be called more than once. If
+-- the call fails the job will be started regardless.
+type JobStartingNotify = RpcSendPort (SubPubSource ProcessOutput ExitCode) ()
 
 data JobRequest = JobRequest { jobName     :: !JobName
                              , jobPriority :: !Priority
                              , jobCommand  :: FilePath
                              , jobArgs     :: [String]
                              , jobCwd      :: FilePath
+                             , jobSink     :: !OutputSink
                              , jobEnv      :: Maybe [(String, String)]
                              }
                 deriving (Show, Generic)

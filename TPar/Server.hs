@@ -47,10 +47,15 @@ import TPar.Utils
 enqueueAndFollow :: ServerIface -> JobRequest
                  -> Process (Producer ProcessOutput Process ExitCode)
 enqueueAndFollow iface jobReq = do
-    undefined
-    -- (sink, src) <- Stream.newStream
-    -- _jobId <- callRpc (enqueueJob iface) (jobReq, ToRemoteSink sink)
-    -- return $ RemoteStream.toProducer src
+    (rpcSp, rpcRp) <- newRpc
+    jobId <- callRpc (enqueueJob iface) (jobReq, Just rpcSp)
+    receiveWait
+        [ matchRpc rpcRp $ \subPub -> do
+              mprod <- subscribe subPub
+              case mprod of
+                Just prod -> return ((), prod)
+                Nothing   -> fail "enqueueAndFollow: Initial subscription failed"
+        ]
 
 -----------------------------------------------
 -- Workers
@@ -76,9 +81,8 @@ runRemoteWorker (ServerIface {..}) = forever runOneJob
         -- killed
         let finished = liftIO $ atomically $ putTMVar doneVar ()
         _pid <- spawnLocal $ flip finally finished $ do
-            (job, jobStartedSp, jobFinishedSp) <- callRpc requestJob ()
+            Right (job, notifyJobStarted, jobFinishedSp) <- callRpc requestJob ()
             tparDebug $ "have job "++show (jobId job)
-            let notifyJobStarted = sendChan jobStartedSp
             result <- runJobWithWorker job notifyJobStarted localWorker
             finishedTime <- liftIO getCurrentTime
             sendChan jobFinishedSp (finishedTime, result)
@@ -86,7 +90,7 @@ runRemoteWorker (ServerIface {..}) = forever runOneJob
         liftIO $ atomically $ takeTMVar doneVar
 
 runJobWithWorker :: Job
-                 -> (SubPubSource ProcessOutput ExitCode -> Process ())
+                 -> JobStartedNotify
                  -> Worker
                  -> Process ExitCode
 runJobWithWorker (Job {..}) notifyJobStarted worker = do
@@ -95,8 +99,10 @@ runJobWithWorker (Job {..}) notifyJobStarted worker = do
     --                 ToFiles so se     -> \src ->
     --                     withOutFiles so se $ \hStdout hStderr -> do
     --                     src >-> processOutputToHandles hStdout hStderr
-    (subPub, readRet) <- SubPub.fromProducer $ worker jobRequest
-    notifyJobStarted subPub
+    (start, subPub, readRet) <- SubPub.fromProducer' $ worker jobRequest
+    -- wait for confirmation from server before starting
+    Right () <- callRpc notifyJobStarted subPub
+    start
     either throwM pure =<< liftIO (atomically readRet)
   where
     withOutFiles outPath errPath action
@@ -131,17 +137,19 @@ server jobQueue = do
     serverPid <- spawnLocal $ void $ forever $ do
         serverPid <- getSelfPid
         receiveWait
-            [ matchRpc enqueueJobRp $ \(jobReq, dataStream) -> do
+            [ matchRpc enqueueJobRp $ \(jobReq, notifyOriginator) -> do
                   tparDebug "enqueue"
                   jobQueueTime <- liftIO getCurrentTime
                   liftIO $ atomically $ do
                       jobId <- getFreshJobId jobQueue
-                      queueJob jobQueue jobId jobQueueTime dataStream jobReq
+                      queueJob jobQueue jobId jobQueueTime jobReq notifyOriginator
                       return (jobId, ())
 
             , matchRpc' requestJobRp $ \ workerPid () reply -> do
                   tparDebug "request job"
-                  spawnLocal $ handleJobRequest serverPid jobQueue workerPid reply
+                  spawnLocal $ do
+                      link serverPid
+                      handleJobRequest jobQueue workerPid reply
                   return ()
 
             , matchRpc getQueueStatusRp $ \match -> do
@@ -159,19 +167,17 @@ server jobQueue = do
             ]
     return $ ServerIface {..}
 
-handleJobRequest :: ProcessId            -- ^ the 'ProcessId' of the server's message loop
-                 -> JobQueue
+handleJobRequest :: JobQueue
                  -> ProcessId
-                 -> ((Job, JobStartedChan, JobFinishedChan) -> Process ())
+                 -> ((Job, JobStartedNotify, JobFinishedChan) -> Process ())
                  -> Process ()
-handleJobRequest serverPid jobQueue workerPid reply = do
+handleJobRequest jobQueue workerPid reply = do
     -- get a job
-    link serverPid
     monRef <- monitor workerPid
     job <- liftIO $ atomically $ takeQueuedJob jobQueue
 
     -- send the job to worker
-    (startedSp, startedRp) <- newChan
+    (startedSp, startedRp) <- newRpc
     (finishedSp, finishedRp) <- newChan
     reply (job, startedSp, finishedSp)
     let jobid = jobId job
@@ -182,14 +188,23 @@ handleJobRequest serverPid jobQueue workerPid reply = do
     tparDebug $ "job "++show jobid++" starting"
 
     -- wait for started notification
-    jobMonitor <- receiveChan startedRp
+    jobMonitor <- receiveWait
+        [matchRpc startedRp $ \jobMonitor -> do
+            flip traverse (jobStartingNotify job) $ \notifyOriginator -> do
+                res <- callRpc notifyOriginator jobMonitor
+                case res of
+                  Right () -> return ()
+                  Left reason ->
+                      say $ "Job starting notification to "++show notifyOriginator++" failed. Starting anyways."
+            return ((), jobMonitor)
+        ]
     jobStartTime <- liftIO getCurrentTime
     liftIO $ atomically $ setJobState jobQueue jobid (Running {..})
     tparDebug $ "job "++show jobid++" running"
 
     -- wait for result
     receiveWait
-        [ matchChan finishedRp $ \(jobFinishTime, jobExitCode) -> do
+        [ matchChan finishedRp $ \(jobFinishTime, jobExitCode) ->
               liftIO $ atomically $ setJobState jobQueue jobid (Finished {..})
 
         , matchIf (\(ProcessMonitorNotification ref _ _) -> ref == monRef) $
@@ -302,8 +317,10 @@ reEnqueueJob jq Job{..} reEnqueueTime
         Finished {} -> True
         Killed {}   -> True
 
-queueJob :: JobQueue -> JobId -> UTCTime -> OutputSink -> JobRequest -> STM ()
-queueJob (JobQueue {..}) jobId jobQueueTime jobSink jobRequest = do
+queueJob :: JobQueue -> JobId -> UTCTime -> JobRequest
+         -> Maybe JobStartingNotify
+         -> STM ()
+queueJob (JobQueue {..}) jobId jobQueueTime jobRequest jobStartingNotify = do
     modifyTVar jobQueue $ H.insert (prio, jobId)
     modifyTVar jobs $ M.insert jobId (Job {jobState = Queued {..}, ..})
   where

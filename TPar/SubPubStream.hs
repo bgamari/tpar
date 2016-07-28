@@ -5,6 +5,7 @@
 module TPar.SubPubStream
     ( SubPubSource
     , fromProducer
+    , fromProducer'
     , subscribe
       -- * Internal
     , produceTChan
@@ -37,10 +38,26 @@ fromProducer :: forall a r. (Serializable a, Serializable r)
              => Producer a Process r
              -> Process (SubPubSource a r, STM (Either SubPubProducerFailed r))
 fromProducer prod0 = do
+    (start, subPub, getResult) <- fromProducer' prod0
+    start
+    return (subPub, getResult)
+
+-- | Create a new 'SubPubSource' being asynchronously fed by the given
+-- 'Producer'. The 'Producer' will not be started until the returned 'Process'
+-- is executed. Exceptions thrown by the 'Producer' will be thrown to
+-- subscribers.
+fromProducer' :: forall a r. (Serializable a, Serializable r)
+              => Producer a Process r
+              -> Process (Process (), SubPubSource a r, STM (Either SubPubProducerFailed r))
+              -- ^ returns a 'Process' action to start source, the 'SubPubSource'
+              -- itself, and an 'STM' action to determine request the final
+              -- return value.
+fromProducer' prod0 = do
     dataQueue <- liftIO $ atomically $ newTBQueue 10
     (subReqSP, subReqRP) <- newChan
     resultVar <- liftIO $ atomically newEmptyTMVar
     feeder <- spawnLocal $ do
+        () <- expect
         r <- feedChan dataQueue prod0
         liftIO $ atomically $ putTMVar resultVar r
 
@@ -48,7 +65,7 @@ fromProducer prod0 = do
         feederRef <- monitor feeder
         loop feederRef subReqRP dataQueue M.empty
 
-    return (SubPubSource subReqSP, readTMVar resultVar)
+    return (send feeder (), SubPubSource subReqSP, readTMVar resultVar)
   where
     -- Feed data from Producer into TChan
     feedChan :: TBQueue (DataMsg a r)

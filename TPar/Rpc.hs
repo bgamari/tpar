@@ -7,7 +7,7 @@ import Control.Distributed.Process.Serializable
 import Data.Binary
 
 newtype RpcSendPort a b = RpcSendPort (SendPort (a, SendPort b))
-                        deriving (Binary, Serializable)
+                        deriving (Show, Binary, Serializable)
 newtype RpcRecvPort a b = RpcRecvPort (ReceivePort (a, SendPort b) )
 
 newRpc :: (Serializable a, Serializable b)
@@ -16,12 +16,18 @@ newRpc = do
     (sp, rp) <- newChan
     return (RpcSendPort sp, RpcRecvPort rp)
 
+-- | Call a remote procedure or return 'Left' if the handling process is no
+-- longer alive.
 callRpc :: (Serializable a, Serializable b)
-        => RpcSendPort a b -> a -> Process b
+        => RpcSendPort a b -> a -> Process (Either DiedReason b)
 callRpc (RpcSendPort sp) x = do
     (reply_sp, reply_rp) <- newChan
+    mref <- monitorPort sp
     sendChan sp (x, reply_sp)
-    receiveChan reply_rp
+    receiveWait [ matchIf (\(PortMonitorNotification mref' _ _) -> mref == mref')
+                          (\(PortMonitorNotification _ _ reason) -> pure $ Left reason)
+                , matchChan reply_rp (pure . Right)
+                ]
 
 matchRpc :: (Serializable a, Serializable b)
          => RpcRecvPort a b -> (a -> Process (b, c)) -> Match c
