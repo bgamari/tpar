@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module TPar.SubPubStream
     ( SubPubSource
@@ -11,7 +12,6 @@ module TPar.SubPubStream
 
 import Control.Monad.Catch
 import Control.Monad (void)
-import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import GHC.Generics (Generic)
 import Data.Binary
@@ -21,14 +21,12 @@ import Control.Distributed.Process.Serializable
 import Control.Concurrent.STM
 import Pipes
 
-data SubPubSource a r = SubPubSource (SendPort (SendPort (DataMsg a r), SendPort ()))
-
--- | A process pushing data from the broadcast channel to a sink.
-type PusherProcess = ProcessId
+newtype SubPubSource a r = SubPubSource (SendPort (SendPort (DataMsg a r), SendPort ()))
+                         deriving (Show, Eq, Ord, Binary)
 
 data DataMsg a r = More a
                  | Done r
-                 | Failed ProcessId DiedReason
+                 | Failed SubPubProducerFailed
                  deriving (Show, Generic)
 instance (Binary a, Binary r) => Binary (DataMsg a r)
 
@@ -36,20 +34,26 @@ instance (Binary a, Binary r) => Binary (DataMsg a r)
 -- 'Producer'. Exceptions thrown by the 'Producer' will be thrown to
 -- subscribers.
 fromProducer :: forall a r. (Serializable a, Serializable r)
-             => Producer a Process r -> Process (SubPubSource a r)
+             => Producer a Process r
+             -> Process (SubPubSource a r, STM (Either SubPubProducerFailed r))
 fromProducer prod0 = do
     dataQueue <- liftIO $ atomically $ newTBQueue 10
     (subReqSP, subReqRP) <- newChan
-    feeder <- spawnLocal $ feedChan dataQueue prod0
+    resultVar <- liftIO $ atomically newEmptyTMVar
+    feeder <- spawnLocal $ do
+        r <- feedChan dataQueue prod0
+        liftIO $ atomically $ putTMVar resultVar r
+
     void $ spawnLocal $ do
         feederRef <- monitor feeder
         loop feederRef subReqRP dataQueue M.empty
-    return $ SubPubSource subReqSP
+
+    return (SubPubSource subReqSP, readTMVar resultVar)
   where
     -- Feed data from Producer into TChan
     feedChan :: TBQueue (DataMsg a r)
              -> Producer a Process r
-             -> Process ()
+             -> Process (Either SubPubProducerFailed r)
     feedChan queue = go
       where
         go prod = do
@@ -57,12 +61,15 @@ fromProducer prod0 = do
             case mx of
               Left exc -> do
                   pid <- getSelfPid
-                  liftIO $ atomically $ writeTBQueue queue (Failed pid $ DiedException $ show exc)
+                  let x = SubPubProducerFailed pid $ DiedException $ show exc
+                  liftIO $ atomically $ writeTBQueue queue (Failed x)
+                  return $ Left x
 
               Right (Left r) -> do
                   say "feedChan:finishing"
                   liftIO $ atomically $ writeTBQueue queue (Done r)
                   say "feedChan:finished"
+                  return $ Right r
 
               Right (Right (x, prod')) -> do
                   say "feedChan:fed"
@@ -107,8 +114,7 @@ fromProducer prod0 = do
             , matchIf (\(ProcessMonitorNotification mref _ _) -> mref == feederRef)
               $ \(ProcessMonitorNotification _ pid reason) -> do
                   say "loop:feederDied"
-                  sendToSubscribers $ Failed pid reason
-
+                  sendToSubscribers $ Failed $ SubPubProducerFailed pid reason
             ]
       where
         sendToSubscribers msg = mapM_ (`sendChan` msg) subscribers
@@ -116,8 +122,9 @@ fromProducer prod0 = do
 -- | An exception indicating that the upstream 'Producer' feeding a
 -- 'SubPubSource' failed.
 data SubPubProducerFailed = SubPubProducerFailed ProcessId DiedReason
-                          deriving (Show)
+                          deriving (Show, Generic)
 instance Exception SubPubProducerFailed
+instance Binary SubPubProducerFailed
 
 produceTChan :: TChan (Either r a) -> Producer a Process r
 produceTChan chan = go
@@ -150,7 +157,7 @@ subscribe (SubPubSource reqSP) = do
                   $ const $ fail "subscribe: it died"
                 ]
             case msg of
-              Failed pid reason -> lift $ throwM $ SubPubProducerFailed pid reason
+              Failed err -> lift $ throwM err
               Done r -> return r
               More x -> yield x >> go
 

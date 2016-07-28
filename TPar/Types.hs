@@ -14,7 +14,7 @@ import Data.Time.Clock
 import Data.Time.Calendar
 
 import TPar.ProcessPipe
-import TPar.RemoteStream
+import TPar.SubPubStream
 
 newtype JobId = JobId Int
               deriving (Eq, Ord, Show, Binary)
@@ -53,8 +53,13 @@ newtype Priority = Priority Int
 
 data JobState = Queued { jobQueueTime    :: !UTCTime }
                 -- ^ the job is waiting to be run
+              | Starting { jobProcessId  :: !ProcessId
+                         , jobQueueTime  :: !UTCTime
+                         , jobStartingTime :: !UTCTime
+                         }
+                -- ^ the job is currently starting on the given worker.
               | Running { jobProcessId   :: !ProcessId
-                        , jobMonitor     :: !(SendPort (SinkPort ProcessOutput ExitCode))
+                        , jobMonitor     :: !(SubPubSource ProcessOutput ExitCode)
                         , jobQueueTime   :: !UTCTime
                         , jobStartTime   :: !UTCTime }
                 -- ^ the job currently running on the worker with the given
@@ -77,6 +82,7 @@ data JobState = Queued { jobQueueTime    :: !UTCTime }
 
 jobMaybeStartTime :: JobState -> Maybe UTCTime
 jobMaybeStartTime (Queued{})     = Nothing
+jobMaybeStartTime (Starting{})   = Nothing
 jobMaybeStartTime (Running{..})  = Just jobStartTime
 jobMaybeStartTime (Finished{..}) = Just jobStartTime
 jobMaybeStartTime (Failed{..})   = Just jobStartTime

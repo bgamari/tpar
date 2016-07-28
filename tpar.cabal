@@ -18,7 +18,7 @@ executable tpar
                        TPar.Server.Types
                        TPar.JobMatch
                        TPar.ProcessPipe
-                       TPar.RemoteStream
+                       TPar.SubPubStream
                        TPar.Rpc
                        TPar.Types
                        TPar.Utils

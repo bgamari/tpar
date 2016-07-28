@@ -116,15 +116,6 @@ runProcess cmd args cwd = do
         liftIO $ waitForProcess phandle
 
 processOutputToHandles :: MonadIO m
-                       => Handle -> Handle -> Producer ProcessOutput m a -> m a
-processOutputToHandles stdout stderr = go
-  where
-    go prod = do
-      status <- next prod
-      case status of
-        Right (x, prod') -> do
-          liftIO $ case x of
-                     PutStdout a  -> BS.hPut stdout a
-                     PutStderr a  -> BS.hPut stderr a
-          go prod'
-        Left code -> return code
+                       => Handle -> Handle -> ProcessOutput -> m ()
+processOutputToHandles stdout stderr (PutStdout a) = liftIO $ BS.hPut stdout a
+processOutputToHandles stdout stderr (PutStderr a) = liftIO $ BS.hPut stderr a

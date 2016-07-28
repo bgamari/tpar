@@ -17,6 +17,7 @@ module TPar.Server
 import Control.Error
 import Control.Applicative
 import Control.Monad (void, forever, filterM)
+import Control.Monad.Catch
 import Data.Foldable
 import Data.Traversable
 import qualified Data.Heap as H
@@ -31,10 +32,9 @@ import System.Exit
 import Control.Concurrent.STM
 
 import Pipes
-import qualified Pipes.Prelude as PP
 
 import TPar.Rpc
-import TPar.RemoteStream as RemoteStream
+import TPar.SubPubStream as SubPub
 import TPar.ProcessPipe
 import TPar.Server.Types
 import TPar.Types
@@ -47,9 +47,10 @@ import TPar.Utils
 enqueueAndFollow :: ServerIface -> JobRequest
                  -> Process (Producer ProcessOutput Process ExitCode)
 enqueueAndFollow iface jobReq = do
-    (sink, src) <- RemoteStream.newStream
-    _jobId <- callRpc (enqueueJob iface) (jobReq, ToRemoteSink sink)
-    return $ RemoteStream.toProducer src
+    undefined
+    -- (sink, src) <- Stream.newStream
+    -- _jobId <- callRpc (enqueueJob iface) (jobReq, ToRemoteSink sink)
+    -- return $ RemoteStream.toProducer src
 
 -----------------------------------------------
 -- Workers
@@ -75,22 +76,28 @@ runRemoteWorker (ServerIface {..}) = forever runOneJob
         -- killed
         let finished = liftIO $ atomically $ putTMVar doneVar ()
         _pid <- spawnLocal $ flip finally finished $ do
-            (job, finishedSp) <- callRpc requestJob ()
+            (job, jobStartedSp, jobFinishedSp) <- callRpc requestJob ()
             tparDebug $ "have job "++show (jobId job)
-            code <- runJobWithWorker job localWorker
-            sendChan finishedSp code
+            let notifyJobStarted = sendChan jobStartedSp
+            result <- runJobWithWorker job notifyJobStarted localWorker
+            finishedTime <- liftIO getCurrentTime
+            sendChan jobFinishedSp (finishedTime, result)
 
         liftIO $ atomically $ takeTMVar doneVar
 
-runJobWithWorker :: Job -> Worker -> Process ExitCode
-runJobWithWorker (Job {..}) worker =
-    let intoSink = case jobSink of
-                     ToRemoteSink sink -> connectSink sink
-                     NoOutput          -> \src -> runEffect $ src >-> PP.drain
-                     ToFiles so se     -> \src ->
-                         withOutFiles so se $ \hStdout hStderr ->
-                         processOutputToHandles hStdout hStderr src
-    in intoSink $ worker jobRequest
+runJobWithWorker :: Job
+                 -> (SubPubSource ProcessOutput ExitCode -> Process ())
+                 -> Worker
+                 -> Process ExitCode
+runJobWithWorker (Job {..}) notifyJobStarted worker = do
+    --let intoSink = case jobSink of
+    --                 NoOutput          -> \src -> cat
+    --                 ToFiles so se     -> \src ->
+    --                     withOutFiles so se $ \hStdout hStderr -> do
+    --                     src >-> processOutputToHandles hStdout hStderr
+    (subPub, readRet) <- SubPub.fromProducer $ worker jobRequest
+    notifyJobStarted subPub
+    either throwM pure =<< liftIO (atomically readRet)
   where
     withOutFiles outPath errPath action
       | outPath == errPath = withOutFile outPath $ \h -> action h h
@@ -155,7 +162,7 @@ server jobQueue = do
 handleJobRequest :: ProcessId            -- ^ the 'ProcessId' of the server's message loop
                  -> JobQueue
                  -> ProcessId
-                 -> ((Job, SendPort ExitCode) -> Process ())
+                 -> ((Job, JobStartedChan, JobFinishedChan) -> Process ())
                  -> Process ()
 handleJobRequest serverPid jobQueue workerPid reply = do
     -- get a job
@@ -164,18 +171,25 @@ handleJobRequest serverPid jobQueue workerPid reply = do
     job <- liftIO $ atomically $ takeQueuedJob jobQueue
 
     -- send the job to worker
+    (startedSp, startedRp) <- newChan
     (finishedSp, finishedRp) <- newChan
-    reply (job, finishedSp)
+    reply (job, startedSp, finishedSp)
     let jobid = jobId job
+        jobProcessId = workerPid
         Queued {jobQueueTime} = jobState job
+    jobStartingTime <- liftIO getCurrentTime
+    liftIO $ atomically $ setJobState jobQueue jobid (Starting {..})
+    tparDebug $ "job "++show jobid++" starting"
+
+    -- wait for started notification
+    jobMonitor <- receiveChan startedRp
     jobStartTime <- liftIO getCurrentTime
-    liftIO $ atomically $ setJobState jobQueue jobid (Running { jobProcessId = workerPid, .. })
-    tparDebug $ "job "++show jobid++" sent"
+    liftIO $ atomically $ setJobState jobQueue jobid (Running {..})
+    tparDebug $ "job "++show jobid++" running"
 
     -- wait for result
     receiveWait
-        [ matchChan finishedRp $ \jobExitCode -> do
-              jobFinishTime <- liftIO getCurrentTime
+        [ matchChan finishedRp $ \(jobFinishTime, jobExitCode) -> do
               liftIO $ atomically $ setJobState jobQueue jobid (Finished {..})
 
         , matchIf (\(ProcessMonitorNotification ref _ _) -> ref == monRef) $
@@ -282,6 +296,7 @@ reEnqueueJob jq Job{..} reEnqueueTime
     reQueuable =
       case jobState of
         Queued {}   -> False
+        Starting {} -> False
         Running {}  -> False
         Failed {}   -> True
         Finished {} -> True

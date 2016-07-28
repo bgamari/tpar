@@ -58,7 +58,7 @@ test' :: forall a r. (Show a, Show r, Serializable a, Serializable r)
      => TestEvent a r -> Process Bool
 test' events0 = do
     produceChan <- atomically' newTChan
-    pubSubSrc <- fromProducer $ produceTChan produceChan >-> traceP
+    (pubSubSrc, readRet) <- fromProducer $ produceTChan produceChan >-> traceP
     goodVars <- execStateT (go produceChan pubSubSrc events0) []
     say $ "goodVars:"++show (length goodVars)
     and <$> mapM (atomically' . readTMVar) goodVars

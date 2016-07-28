@@ -21,6 +21,8 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (NodeId(..))
 import Control.Distributed.Process.Node
 import qualified Text.Trifecta as TT
+import Pipes
+import qualified Pipes.Prelude as P.P
 
 import TPar.Rpc
 import TPar.ProcessPipe (processOutputToHandles)
@@ -194,7 +196,7 @@ modeEnqueue =
           where
             go iface jobReq = do
                 prod <- enqueueAndFollow iface jobReq
-                code <- processOutputToHandles stdout stderr prod
+                code <- runEffect $ prod >-> P.P.mapM_ (processOutputToHandles stdout stderr)
                 case code of
                     ExitSuccess   -> return ()
                     ExitFailure n ->
@@ -248,6 +250,7 @@ prettyJob verbose prettyTime (Job {..}) =
         T.PP.<$$> mempty
 
     prettyDetailedState Queued{..}    = "waiting to run" <+> T.PP.parens ("since" <+> prettyTime jobQueueTime)
+    prettyDetailedState Starting{..}  = "starting on" <+> prettyShow jobProcessId <+> T.PP.parens ("since" <+> prettyTime jobStartingTime)
     prettyDetailedState Running{..}   = "running on" <+> prettyShow jobProcessId <+> T.PP.parens ("since" <+> prettyTime jobStartTime)
     prettyDetailedState Finished{..}  = "finished with" <+> prettyShow (getExitCode jobExitCode) <+> T.PP.parens (prettyTime jobFinishTime)
     prettyDetailedState Failed{..}    = "failed with error" <+> T.PP.parens (prettyTime jobFailedTime)
@@ -255,6 +258,7 @@ prettyJob verbose prettyTime (Job {..}) =
     prettyDetailedState Killed{..}    = "killed at user request" <+> T.PP.parens (prettyTime jobKilledTime)
 
     prettyJobState Queued{}           = T.PP.blue "queued"
+    prettyJobState Starting{}         = T.PP.blue "starting"
     prettyJobState Running{}          = T.PP.green "running"
     prettyJobState Finished{..}
       | ExitFailure c <- jobExitCode  = T.PP.yellow $ "finished"
