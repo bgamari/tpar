@@ -27,25 +27,25 @@ newtype SinkPort a r = SinkPort (SendPort (RequestConnection r a))
 newtype SourcePort a r = SourcePort (ReceivePort (RequestConnection r a))
 
 -- handshake protocol:
--- | Source to sink
+
+-- | Sink to source: First let the downstream (source) side know that we want to
+-- send it data. This allows it to initiate linking.
 newtype RequestConnection r a = RequestConnection (SendPort (StartSending r a))
                               deriving (Binary)
--- | Sink to source
-newtype StartSending r a = StartSending (SendPort (Either (r, SendPort a))
+
+-- | Source to sink: The downstream side lets the upstream side know where to
+-- send its data.
+newtype StartSending r a = StartSending (SendPort (DataMsg r a))
                          deriving (Binary)
 
-data DataMesg r a = Next a
-                  | Done r
-                  | Failed DiedReason
-                  deriving (Show, Generic)
-instance (Binary a, Binary r) => Binary (DataMesg r a)
--- ... then send data ...
+-- | Sink to source: The sink sends zero or more 'More' messages followed by
+-- either a 'Done' or 'Failed' message.
+data DataMsg r a = More a
+                 | Done r
+                 | Failed ProcessId String
+                 deriving (Show, Generic)
+instance (Binary a, Binary r) => Binary (DataMsg r a)
 
--- and then clean up:
-newtype EverythingSent     = EverythingSent ()            -- source to sink
-                           deriving (Binary)
-newtype Done               = Done ()                      -- sink to source
-                           deriving (Binary)
 
 -- | Feed data from a 'Producer' into a 'SinkPort'.
 connectSink :: forall a r. (Serializable a, Serializable r)
@@ -58,21 +58,19 @@ connectSink (SinkPort sp) prod0 = do
     say "RStream.connectSink:haveConnection"
     r <- go dataSp prod0
     say "RStream.connectSink:expectEverythingSent"
-    EverythingSent () <- expect    -- wait until completion confirmation
-    say "RStream.connectSink:everythingSent"
-    unlinkPort sp
-    send srcPid (Done ())
-    return r
   where
-    go :: SendPort (Either r a) -> Producer a Process r -> Process r
+    go :: SendPort (DataMsg r a) -> Producer a Process r -> Process r
     go dataSp prod = do
-        r <- next prod
+        r <- handleAny (pure . Left) (fmap Right $ next prod)
         case r of
-            Left done -> do
-                sendChan dataSp (Left done)
+            Left exc -> do
+                pid <- getSelfPid
+                sendChan dataSp (Failed pid $ show exc)
+            Right (Left done) -> do
+                sendChan dataSp (Done done)
                 return done
-            Right (x, prod') -> do
-                sendChan dataSp (Right x)
+            Right (Right (x, prod')) -> do
+                sendChan dataSp (More x)
                 go dataSp prod'
 
 -- | Convert a 'SourcePort' into a 'Producer'.
