@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module TPar.ProcessPipe ( ProcessOutput(..)
@@ -7,6 +8,8 @@ module TPar.ProcessPipe ( ProcessOutput(..)
                         , ProcessKilled(..)
                           -- * Deinterleaving output
                         , processOutputToHandles
+                        , selectStream
+                        , OutputStreams(..)
                         ) where
 
 import Control.Applicative
@@ -85,6 +88,10 @@ data ProcessOutput
 
 instance Binary ProcessOutput
 
+data OutputStreams a = OutputStreams { stdOut, stdErr :: a }
+                     deriving (Show, Functor, Generic)
+instance Binary a => Binary (OutputStreams a)
+
 -- Unfortunate orphan
 instance Binary ExitCode where
     get = do
@@ -101,11 +108,17 @@ data ProcessKilled = ProcessKilled
 instance Binary ProcessKilled
 instance Exception ProcessKilled
 
+selectStream :: OutputStreams (ByteString -> a) -> ProcessOutput -> a
+selectStream (OutputStreams out err) outs =
+    case outs of
+      PutStdout bs -> out bs
+      PutStderr bs -> err bs
+
 runProcess :: FilePath -> [String] -> Maybe FilePath
            -> Producer ProcessOutput Process ExitCode
 runProcess cmd args cwd = do
     lift $ tparDebug "starting process"
-    (stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args cwd Nothing
+    (_stdin, stdout, stderr, phandle) <- liftIO $ processPipes cmd args cwd Nothing
     let processKilled ProcessKilled = liftIO $ do
             terminateProcess phandle
             throwM ProcessKilled
@@ -116,6 +129,6 @@ runProcess cmd args cwd = do
         liftIO $ waitForProcess phandle
 
 processOutputToHandles :: MonadIO m
-                       => Handle -> Handle -> ProcessOutput -> m ()
-processOutputToHandles stdout stderr (PutStdout a) = liftIO $ BS.hPut stdout a
-processOutputToHandles stdout stderr (PutStderr a) = liftIO $ BS.hPut stderr a
+                       => OutputStreams Handle -> ProcessOutput -> m ()
+processOutputToHandles handles =
+    selectStream $ fmap (\hdl bs -> liftIO $ BS.hPut hdl bs) handles

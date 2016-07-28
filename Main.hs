@@ -25,7 +25,7 @@ import Pipes
 import qualified Pipes.Prelude as P.P
 
 import TPar.Rpc
-import TPar.ProcessPipe (processOutputToHandles)
+import TPar.ProcessPipe (processOutputToHandles, OutputStreams(..))
 import TPar.Server
 import TPar.Server.Types
 import TPar.JobMatch
@@ -165,7 +165,8 @@ modeEnqueue =
         <*  helper
   where
     run :: HostName -> ServiceName
-        -> OutputSink -> Bool -> JobName -> FilePath -> Priority -> [String]
+        -> OutputStreams (Maybe FilePath) -> Bool
+        -> JobName -> FilePath -> Priority -> [String]
         -> IO ()
     run serverHost serverPort sink watch name dir priority (cmd:args) =
         withServer serverHost serverPort $ \iface -> do
@@ -173,14 +174,14 @@ modeEnqueue =
                                     , jobPriority = priority
                                     , jobCommand  = cmd
                                     , jobArgs     = args
-                                    , jobSink     = sink
+                                    , jobSinks    = sink
                                     , jobCwd      = dir
                                     , jobEnv      = Nothing
                                     }
             if watch
               then do
                 prod <- enqueueAndFollow iface jobReq
-                code <- runEffect $ prod >-> P.P.mapM_ (processOutputToHandles stdout stderr)
+                code <- runEffect $ prod >-> P.P.mapM_ (processOutputToHandles $ OutputStreams stdout stderr)
                 case code of
                     ExitSuccess   -> return ()
                     ExitFailure n ->
@@ -191,9 +192,9 @@ modeEnqueue =
 
     run _ _ _ _ _ _ _ _ = fail "Expected command line"
 
-    sinkType :: Parser OutputSink
+    sinkType :: Parser (OutputStreams (Maybe FilePath))
     sinkType =
-        ToFiles
+        OutputStreams
           <$> option (Just <$> str)
                      (short 'o' <> long "output" <> metavar "FILE"
                      <> help "remote file to log standard output to"

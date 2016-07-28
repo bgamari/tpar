@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module TPar.Server
@@ -17,21 +18,23 @@ module TPar.Server
 import Control.Error
 import Control.Applicative
 import Control.Monad (void, forever, filterM)
-import Control.Monad.Catch
 import Data.Foldable
 import Data.Traversable
 import qualified Data.Heap as H
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Control.Monad.Catch (finally, bracket)
+import qualified Data.ByteString as BS
+import Control.Monad.Catch
 import Control.Distributed.Process hiding (finally, bracket)
 import Data.Time.Clock
 
-import System.IO ( openFile, hClose, IOMode(..))
+import System.IO ( openFile, hClose, IOMode(..), Handle )
 import System.Exit
 import Control.Concurrent.STM
 
 import Pipes
+import qualified Pipes.Prelude as P.P
+import qualified Pipes.Safe as Safe
 
 import TPar.Rpc
 import TPar.SubPubStream as SubPub
@@ -93,22 +96,52 @@ runJobWithWorker :: Job
                  -> JobStartedNotify
                  -> Worker
                  -> Process ExitCode
-runJobWithWorker (Job {..}) notifyJobStarted worker = do
-    --let intoSink = case jobSink of
-    --                 NoOutput          -> \src -> cat
-    --                 ToFiles so se     -> \src ->
-    --                     withOutFiles so se $ \hStdout hStderr -> do
-    --                     src >-> processOutputToHandles hStdout hStderr
-    (start, subPub, readRet) <- SubPub.fromProducer' $ worker jobRequest
-    -- wait for confirmation from server before starting
-    Right () <- callRpc notifyJobStarted subPub
-    start
-    either throwM pure =<< liftIO (atomically readRet)
+runJobWithWorker (Job {..}) notifyJobStarted worker =
+    withOutFiles (jobSinks jobRequest) $ \intoSinks -> do
+        (start, subPub, readRet) <-
+            SubPub.fromProducer' $ worker jobRequest >-> intoSinks
+        -- wait for confirmation from server before starting
+        Right () <- callRpc notifyJobStarted subPub
+        start
+        either throwM pure =<< liftIO (atomically readRet)
   where
-    withOutFiles outPath errPath action
-      | outPath == errPath = withOutFile outPath $ \h -> action h h
-      | otherwise          = withOutFile outPath $ \out ->
-                             withOutFile errPath $ \err -> action out err
+    withOutFiles :: (MonadMask m, MonadIO m)
+                 => OutputStreams (Maybe FilePath)
+                 -> (Pipe ProcessOutput ProcessOutput m r -> m a)
+                 -> m a
+    withOutFiles (OutputStreams (Just outPath) (Just errPath)) action
+      | outPath == errPath
+      = withOutFile outPath $ \hOut ->
+        action $ P.P.chain
+        $ processOutputToHandles (OutputStreams hOut hOut)
+
+      | otherwise
+      = withOutFile outPath $ \hOut ->
+        withOutFile errPath $ \hErr ->
+        action $ P.P.chain $ processOutputToHandles (OutputStreams hOut hErr)
+
+    withOutFiles (OutputStreams (Just outPath) Nothing) action
+      = withOutFile outPath $ \hOut ->
+        action $ P.P.chain $ toHandles $ OutputStreams (Just hOut) Nothing
+
+    withOutFiles (OutputStreams Nothing (Just errPath)) action
+      = withOutFile errPath $ \hErr ->
+        action $ P.P.chain $ toHandles $ OutputStreams Nothing (Just hErr)
+
+    withOutFiles _ action = action cat
+
+    toHandles :: MonadIO m
+              => OutputStreams (Maybe Handle)
+              -> ProcessOutput -> m ()
+    toHandles streams = liftIO . selectStream writeIt
+      where
+        writeIt :: OutputStreams (BS.ByteString -> IO ())
+        writeIt = fmap (maybe (const $ return ()) BS.hPutStr) streams
+
+    withOutFile :: (MonadIO m, MonadMask m)
+                => FilePath
+                -> (Handle -> m a)
+                -> m a
     withOutFile path = bracket (liftIO $ openFile path WriteMode) (liftIO . hClose)
 
 ------------------------------------------------

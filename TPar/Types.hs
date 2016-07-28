@@ -31,11 +31,6 @@ data Job = Job { jobId      :: !JobId
 
 instance Binary Job
 
--- | A remote output sink.
-data OutputSink = ToFiles (Maybe FilePath) (Maybe FilePath)
-                deriving (Show, Generic)
-instance Binary OutputSink
-
 newtype JobName = JobName String
                 deriving (Show, Eq, Ord, Binary)
 
@@ -50,7 +45,7 @@ data JobRequest = JobRequest { jobName     :: !JobName
                              , jobCommand  :: FilePath
                              , jobArgs     :: [String]
                              , jobCwd      :: FilePath
-                             , jobSink     :: !OutputSink
+                             , jobSinks    :: OutputStreams (Maybe FilePath)
                              , jobEnv      :: Maybe [(String, String)]
                              }
                 deriving (Show, Generic)
