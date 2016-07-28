@@ -330,7 +330,7 @@ prettyJob verbose prettyTime (Job {..}) =
     prettyJobState Killed{}           = T.PP.yellow "killed"
 
     prettyJobId (JobId n)        = T.PP.int n
-    prettyJobName (JobName name) = T.PP.text name
+    prettyJobName (JobName name) = T.PP.bold $ T.PP.text name
     prettyPriority (Priority p)  = T.PP.int p
 
     getExitCode ExitSuccess     = 0
