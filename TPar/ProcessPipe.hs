@@ -40,7 +40,7 @@ import TPar.Utils
 processPipes :: MonadIO m
              => FilePath                -- ^ Executable name
              -> [String]                -- ^ Arguments
-             -> Maybe FilePath          -- ^ Current working directory
+             -> Maybe FilePath          -- ^ Working directory
              -> Maybe [(String,String)] -- ^ Optional environment
              -> IO ( Consumer ByteString m ()
                    , Producer ByteString m ()

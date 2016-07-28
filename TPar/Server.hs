@@ -66,7 +66,7 @@ enqueueAndFollow iface jobReq = do
 type Worker = JobRequest -> Producer ProcessOutput Process ExitCode
 
 localWorker :: Worker
-localWorker req = runProcess (jobCommand req) (jobArgs req) Nothing
+localWorker req = runProcess (jobCommand req) (jobArgs req) (Just $ jobCwd req)
 
 sshWorker :: String -> FilePath -> Worker
 sshWorker host rootPath req = do
