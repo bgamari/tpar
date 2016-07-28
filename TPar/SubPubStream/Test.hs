@@ -25,8 +25,8 @@ data TestEvent a r
 
 instance (Arbitrary a, Arbitrary r) => Arbitrary (TestEvent a r) where
     arbitrary = oneof
-        [ newSub
-        , Produce <$> arbitrary <*> arbitrary
+        [ Produce <$> arbitrary <*> arbitrary
+        , newSub
         , Finish <$> arbitrary
         -- , pure Throw
         ]
@@ -36,11 +36,11 @@ instance (Arbitrary a, Arbitrary r) => Arbitrary (TestEvent a r) where
 atomically' :: MonadIO m => STM a -> m a
 atomically' = liftIO . atomically
 
---test :: TestEvent Int () -> Property
---test = ioProperty . runLocalProcess . test'
+test :: TestEvent Int () -> Property
+test = ioProperty . runLocalProcess . test'
 
-test :: Property
-test = ioProperty $ runLocalProcess $ test' $ events'
+--test :: Property
+--test = ioProperty $ runLocalProcess $ test' $ events'
 
 runLocalProcess :: Process a -> IO a
 runLocalProcess process = do
@@ -75,20 +75,24 @@ test' events0 = do
             result <- P.P.toListM'
                  $  fmap Right prod
                 >-> fmap Left (maybe cat P.P.take maybeN)
-                >-> P.P.mapM (\x -> say "testSubscriber:hello" >> return x)
             say $ "testSubscriber:got:"++show result
+            say $ "testSubscriber:expected:"++show rest
+            -- TODO: Actually check this result
             atomically' $ putTMVar goodVar True
         modify (goodVar:)
         go produceChan pubSubSrc rest
 
     go produceChan pubSubSrc (Produce x rest) = do
+        lift $ say "test:produce"
         atomically' $ writeTChan produceChan (Right x)
         go produceChan pubSubSrc rest
 
-    go produceChan pubSubSrc (Finish x) =
+    go produceChan pubSubSrc (Finish x) = do
+        lift $ say "test:finish"
         atomically' $ writeTChan produceChan (Left x)
 
-    go produceChan pubSubSrc Throw =
+    go produceChan pubSubSrc Throw = do
+        lift $ say "test:throw"
         atomically' $ writeTChan produceChan (Right undefined)
 
 events' :: TestEvent Int ()
