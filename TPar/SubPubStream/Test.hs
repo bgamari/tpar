@@ -2,7 +2,7 @@
 
 module TPar.SubPubStream.Test where
 
-import TPar.SubPubStream
+import Control.Exception
 import Control.Applicative
 import Test.QuickCheck
 
@@ -15,6 +15,7 @@ import Network.Transport.InMemory
 
 import Pipes
 import qualified Pipes.Prelude as P.P
+import TPar.SubPubStream
 
 data TestEvent a r
     = NewSubscriber (Maybe Int) (TestEvent a r) -- how long before terminating
@@ -28,7 +29,7 @@ instance (Arbitrary a, Arbitrary r) => Arbitrary (TestEvent a r) where
         [ Produce <$> arbitrary <*> arbitrary
         , newSub
         , Finish <$> arbitrary
-        -- , pure Throw
+        , pure Throw
         ]
       where
         newSub = (\n -> NewSubscriber $ fmap getPositive n) <$> arbitrary <*> arbitrary
@@ -54,16 +55,26 @@ runLocalProcess process = do
 
     atomically $ takeTMVar resultVar
 
+produceTMVar :: TMVar (Either r a) -> Producer a Process r
+produceTMVar chan = go
+  where
+    go = do
+        lift $ say "produceTChan:waiting"
+        mx <- liftIO $ atomically $ takeTMVar chan
+        case mx of
+          Right x -> lift (say "produceTChan:fed") >> yield x >> go
+          Left r  -> lift (say "produceTChan:done") >> return r
+
 test' :: forall a r. (Show a, Show r, Serializable a, Serializable r)
      => TestEvent a r -> Process Bool
 test' events0 = do
-    produceChan <- atomically' newTChan
-    (pubSubSrc, readRet) <- fromProducer $ produceTChan produceChan >-> traceP
+    produceChan <- atomically' newEmptyTMVar
+    (pubSubSrc, readRet) <- fromProducer $ produceTMVar produceChan >-> traceP
     goodVars <- execStateT (go produceChan pubSubSrc events0) []
     say $ "goodVars:"++show (length goodVars)
     and <$> mapM (atomically' . readTMVar) goodVars
   where
-    go :: TChan (Either r a)
+    go :: TMVar (Either r a)
        -> SubPubSource a r
        -> TestEvent a r
        -> StateT [TMVar Bool] Process ()
@@ -84,16 +95,20 @@ test' events0 = do
 
     go produceChan pubSubSrc (Produce x rest) = do
         lift $ say "test:produce"
-        atomically' $ writeTChan produceChan (Right x)
+        atomically' $ putTMVar produceChan (Right x)
         go produceChan pubSubSrc rest
 
     go produceChan pubSubSrc (Finish x) = do
         lift $ say "test:finish"
-        atomically' $ writeTChan produceChan (Left x)
+        atomically' $ putTMVar produceChan (Left x)
 
     go produceChan pubSubSrc Throw = do
         lift $ say "test:throw"
-        atomically' $ writeTChan produceChan (Right undefined)
+        atomically' $ putTMVar produceChan (Right $ throw TestException)
+
+data TestException = TestException
+                   deriving (Show)
+instance Exception TestException
 
 events' :: TestEvent Int ()
 events' = NewSubscriber Nothing $ Finish ()

@@ -1,14 +1,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE BangPatterns #-}
 
 module TPar.SubPubStream
     ( SubPubSource
     , fromProducer
     , fromProducer'
     , subscribe
-      -- * Internal
-    , produceTChan
     ) where
 
 import Control.Monad.Catch
@@ -17,7 +16,7 @@ import qualified Data.Map.Strict as M
 import GHC.Generics (Generic)
 import Data.Binary
 
-import Control.Distributed.Process
+import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Serializable
 import Control.Concurrent.STM
 import Pipes
@@ -25,9 +24,9 @@ import Pipes
 newtype SubPubSource a r = SubPubSource (SendPort (SendPort (DataMsg a r), SendPort ()))
                          deriving (Show, Eq, Ord, Binary)
 
-data DataMsg a r = More a
-                 | Done r
-                 | Failed SubPubProducerFailed
+data DataMsg a r = More !a
+                 | Done !r
+                 | Failed !SubPubProducerFailed
                  deriving (Show, Generic)
 instance (Binary a, Binary r) => Binary (DataMsg a r)
 
@@ -71,25 +70,26 @@ fromProducer' prod0 = do
     feedChan :: TBQueue (DataMsg a r)
              -> Producer a Process r
              -> Process (Either SubPubProducerFailed r)
-    feedChan queue = go
+    feedChan queue = handleAll uhOh . go
       where
-        go prod = do
-            mx <- handleAll (pure . Left) (fmap Right $ next prod)
-            case mx of
-              Left exc -> do
-                  pid <- getSelfPid
-                  let x = SubPubProducerFailed pid $ DiedException $ show exc
-                  liftIO $ atomically $ writeTBQueue queue (Failed x)
-                  return $ Left x
+        uhOh exc = do
+            pid <- getSelfPid
+            let x = SubPubProducerFailed pid $ DiedException $ show exc
+            liftIO $ atomically $ writeTBQueue queue (Failed x)
+            return $ Left x
 
-              Right (Left r) -> do
+        go prod = do
+            mx <- next prod
+            case mx of
+              Left r -> do
                   say "feedChan:finishing"
                   liftIO $ atomically $ writeTBQueue queue (Done r)
                   say "feedChan:finished"
                   return $ Right r
 
-              Right (Right (x, prod')) -> do
+              Right (x, prod') -> do
                   say "feedChan:fed"
+                  x `seq` say "feedChan:forced"
                   liftIO $ atomically $ writeTBQueue queue (More x)
                   go prod'
 
@@ -134,7 +134,10 @@ fromProducer' prod0 = do
                   sendToSubscribers $ Failed $ SubPubProducerFailed pid reason
             ]
       where
-        sendToSubscribers msg = mapM_ (`sendChan` msg) subscribers
+        sendToSubscribers msg =
+            mapM_ (`sendChan` msg) subscribers
+            `catchAll`
+            \exc -> say $ show exc
 
 -- | An exception indicating that the upstream 'Producer' feeding a
 -- 'SubPubSource' failed.
@@ -142,16 +145,6 @@ data SubPubProducerFailed = SubPubProducerFailed ProcessId DiedReason
                           deriving (Show, Generic)
 instance Exception SubPubProducerFailed
 instance Binary SubPubProducerFailed
-
-produceTChan :: TChan (Either r a) -> Producer a Process r
-produceTChan chan = go
-  where
-    go = do
-        lift $ say "produceTChan:waiting"
-        mx <- liftIO $ atomically $ readTChan chan
-        case mx of
-          Right x -> lift (say "produceTChan:fed") >> yield x >> go
-          Left r  -> lift (say "produceTChan:done") >> return r
 
 -- | Subscribe to a 'SubPubSource'. Exceptions thrown by the 'Producer' feeding
 -- the 'SubPubSource' will be thrown by the returned 'Producer'. Will return
