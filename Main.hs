@@ -2,16 +2,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Control.Monad.Catch
-import Control.Monad (when, forever, replicateM_)
+import Control.Monad (when, unless, forever, replicateM_)
 import Control.Monad.IO.Class
 import Control.Error hiding (err)
+import Data.Foldable
+import qualified Data.Map.Strict as M
 import Data.Time.Clock
 import Data.Time.Format.Human
 import System.Exit
 import System.IO (stderr, stdout)
 
 import qualified Text.PrettyPrint.ANSI.Leijen as T.PP
-import Text.PrettyPrint.ANSI.Leijen (Doc, (<+>))
+import Text.PrettyPrint.ANSI.Leijen (Doc, (<+>), (<$$>))
 import qualified Network.Transport.TCP as TCP
 import Network.Socket (ServiceName, HostName)
 import Network.BSD (getHostName)
@@ -21,12 +23,15 @@ import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (NodeId(..))
 import Control.Distributed.Process.Node
 import qualified Text.Trifecta as TT
+
 import Pipes
+import qualified Pipes.Concurrent as P.C
 import qualified Pipes.Prelude as P.P
 
 import TPar.Rpc
-import TPar.ProcessPipe (processOutputToHandles, OutputStreams(..))
+import TPar.ProcessPipe hiding (runProcess)
 import TPar.Server
+import TPar.SubPubStream as SubPub
 import TPar.Server.Types
 import TPar.JobMatch
 import TPar.Types
@@ -65,6 +70,8 @@ tparParser =
                           $ fullDesc <> progDesc "Kill or dequeue a job")
      <> command "rerun"   ( info modeRerun
                           $ fullDesc <> progDesc "Restart a failed job")
+     <> command "watch"   ( info modeWatch
+                          $ fullDesc <> progDesc "Watch the output of a set of jobs")
 
 withServer' :: HostName -> ServiceName
            -> (ServerIface -> Process a) -> Process a
@@ -211,6 +218,44 @@ liftTrifecta parser = do
         TT.Success a   -> return a
         TT.Failure err -> fail $ show $ TT._errDoc err
 
+modeWatch :: Parser Mode
+modeWatch =
+    run <$> hostOption
+        <*> portOption (help "server port number")
+        <*> (argument (liftTrifecta parseJobMatch) (help "filter jobs") <|> pure AllMatch)
+        <*  helper
+  where
+    run serverHost serverPort match =
+        withServer serverHost serverPort $ \iface -> do
+            inputs <- subscribeToJobs iface match
+            let input = foldMap fold inputs
+                failed = M.keys $ M.filter isNothing inputs
+            unless (null failed) $ liftIO $ print
+                  $  T.PP.red "warning: failed to attach to"
+                 <+> prettyShow (length failed) <+> "jobs"
+                <$$> T.PP.nest 4 (T.PP.vcat $ map prettyShow failed)
+            runEffect $ P.C.fromInput input
+                     >-> P.P.mapM_ (processOutputToHandles $ OutputStreams stdout stderr)
+
+subscribeToJobs :: ServerIface -> JobMatch
+                -> Process (M.Map JobId (Maybe (P.C.Input ProcessOutput)))
+subscribeToJobs iface match = do
+    Right jobs <- callRpc (getQueueStatus iface) match
+    prods <- traverse SubPub.subscribe
+        $ M.unions
+        [ M.singleton jobId jobMonitor
+        | Job {..} <- jobs
+        , Running {..} <- pure jobState
+        ]
+    traverse (traverse producerToInput) prods
+  where
+    producerToInput :: Producer ProcessOutput Process ExitCode
+                    -> Process (P.C.Input ProcessOutput)
+    producerToInput prod = do
+        (output, input) <- liftIO $ P.C.spawn (P.C.bounded 1)
+        void $ spawnLocal $ runEffect $ void prod >-> P.C.toOutput output
+        return input
+
 modeStatus :: Parser Mode
 modeStatus =
     run <$> hostOption
@@ -249,7 +294,7 @@ prettyJob verbose prettyTime (Job {..}) =
         , ("arguments:", T.PP.hsep $ map T.PP.text jobArgs)
         , ("status:",    prettyDetailedState jobState)
         ]
-        T.PP.<$$> mempty
+        <$$> mempty
 
     prettyDetailedState Queued{..}    =
         "waiting to run" <+> T.PP.parens ("since" <+> prettyTime jobQueueTime)
@@ -262,15 +307,15 @@ prettyJob verbose prettyTime (Job {..}) =
     prettyDetailedState Finished{..}  =
         "finished with" <+> prettyShow (getExitCode jobExitCode)
         <+> T.PP.parens ("at" <+> prettyTime jobFinishTime)
-        T.PP.<$$> "started at" <+> prettyShow jobStartTime
-        T.PP.<$$> "ran on" <+> prettyShow jobWorkerNode
+        <$$> "started at" <+> prettyShow jobStartTime
+        <$$> "ran on" <+> prettyShow jobWorkerNode
     prettyDetailedState Failed{..}    =
         "failed with error" <+> T.PP.parens (prettyTime jobFailedTime)
-        T.PP.<$$> "started at" <+> prettyShow jobStartTime
-        T.PP.<$$> T.PP.indent 4 (T.PP.text jobErrorMsg)
+        <$$> "started at" <+> prettyShow jobStartTime
+        <$$> T.PP.indent 4 (T.PP.text jobErrorMsg)
     prettyDetailedState Killed{..}    =
         "killed at user request" <+> T.PP.parens (prettyTime jobKilledTime)
-        T.PP.<$$> "started at" <+> prettyShow jobKilledStartTime
+        <$$> "started at" <+> prettyShow jobKilledStartTime
 
     prettyJobState Queued{}           = T.PP.blue "queued"
     prettyJobState Starting{}         = T.PP.blue "starting"
