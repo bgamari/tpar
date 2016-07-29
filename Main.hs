@@ -310,15 +310,15 @@ prettyJob verbose prettyTime (Job {..}) =
     prettyDetailedState Finished{..}  =
         "finished with" <+> prettyShow (getExitCode jobExitCode)
         <+> T.PP.parens ("at" <+> prettyTime jobFinishTime)
-        <$$> "started at" <+> prettyShow jobStartTime
+        <$$> "started at" <+> prettyTime jobStartTime
         <$$> "ran on" <+> prettyShow jobWorkerNode
     prettyDetailedState Failed{..}    =
         "failed with error" <+> T.PP.parens (prettyTime jobFailedTime)
-        <$$> "started at" <+> prettyShow jobStartTime
+        <$$> "started at" <+> prettyTime jobStartTime
         <$$> T.PP.indent 4 (T.PP.text jobErrorMsg)
     prettyDetailedState Killed{..}    =
         "killed at user request" <+> T.PP.parens (prettyTime jobKilledTime)
-        <$$> "started at" <+> prettyShow jobKilledStartTime
+        <$$> maybe "never started" (\t -> "started at" <+> prettyTime t) jobKilledStartTime
 
     prettyJobState Queued{}           = T.PP.blue "queued"
     prettyJobState Starting{}         = T.PP.blue "starting"
