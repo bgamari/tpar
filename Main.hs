@@ -47,6 +47,9 @@ hostOption :: Parser HostName
 hostOption =
     strOption ( short 'H' <> long "host" <> value "localhost" <> help "server host name" )
 
+jobMatchArg :: Parser JobMatch
+jobMatchArg = argument (liftTrifecta parseJobMatch) (help "job match expression")
+
 type Mode = IO ()
 
 tpar :: ParserInfo Mode
@@ -222,7 +225,7 @@ modeWatch :: Parser Mode
 modeWatch =
     run <$> hostOption
         <*> portOption (help "server port number")
-        <*> (argument (liftTrifecta parseJobMatch) (help "filter jobs") <|> pure AllMatch)
+        <*> jobMatchArg
         <*  helper
   where
     run serverHost serverPort match =
@@ -261,7 +264,7 @@ modeStatus =
     run <$> hostOption
         <*> portOption (help "server port number")
         <*> switch (short 'v' <> long "verbose" <> help "verbose queue status")
-        <*> (argument (liftTrifecta parseJobMatch) (help "filter jobs") <|> pure AllMatch)
+        <*> (jobMatchArg <|> pure (NegMatch NoMatch))
         <*  helper
   where
     run serverHost serverPort verbose match =
@@ -343,7 +346,7 @@ modeKill :: Parser Mode
 modeKill =
     run <$> hostOption
         <*> portOption (help "server port number")
-        <*> argument (liftTrifecta parseJobMatch) (help "jobs to kill")
+        <*> jobMatchArg
         <*  helper
   where
     run serverHost serverPort match =
@@ -356,7 +359,7 @@ modeRerun :: Parser Mode
 modeRerun =
     run <$> hostOption
         <*> portOption (help "server port number")
-        <*> argument (liftTrifecta parseJobMatch) (help "jobs to re-run")
+        <*> jobMatchArg
         <*  helper
   where
     run serverHost serverPort match =

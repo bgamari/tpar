@@ -7,10 +7,12 @@ import Data.Foldable (traverse_)
 import Control.Monad (void)
 import Control.Applicative ((<|>))
 import System.Exit
-import GHC.Generics
+import GHC.Generics (Generic)
 
 import Data.Binary
 import Text.Trifecta
+import Text.Parser.Expression
+import Text.Parser.Token.Style (emptyOps)
 
 import TPar.Types
 
@@ -44,11 +46,11 @@ parseGlob = many $ wildCard <|> literal
     reserved = "*\""
 
 data JobMatch = NoMatch
-              | AllMatch
               | NegMatch JobMatch
               | NameMatch Glob
               | JobIdMatch JobId
               | AltMatch [JobMatch]
+              | AllMatch [JobMatch]
               | StateMatch StateMatch
               deriving (Generic, Show)
 
@@ -65,12 +67,12 @@ instance Binary StateMatch
 
 jobMatches :: JobMatch -> Job -> Bool
 jobMatches NoMatch            _   = False
-jobMatches AllMatch           _   = True
 jobMatches (NegMatch m)       job = not $ jobMatches m job
 jobMatches (NameMatch glob)   job = globMatches glob name
   where JobName name = jobName $ jobRequest job
 jobMatches (JobIdMatch jobid) job = jobId job == jobid
 jobMatches (AltMatch alts)    job = any (`jobMatches` job) alts
+jobMatches (AllMatch alts)    job = all (`jobMatches` job) alts
 jobMatches (StateMatch s)     job = stateMatches s (jobState job)
 
 stateMatches :: StateMatch -> JobState -> Bool
@@ -82,12 +84,32 @@ stateMatches IsFailed                 Failed{}               = True
 stateMatches IsKilled                 Killed{}               = True
 stateMatches _                        _                      = False
 
-parseJobMatch :: Parser JobMatch
-parseJobMatch =
-    AltMatch <$> (allMatch <|> negMatch <|> nameMatch <|> jobIdMatch <|> stateMatch) `sepBy1` char ','
+opTable :: OperatorTable Parser JobMatch
+opTable =
+    [ [ prefix "!" NegMatch ]
+    , [ binary "&" (\x y -> AllMatch [x,y]) AssocLeft
+      , binary "and" (\x y -> AllMatch [x,y]) AssocLeft
+      ]
+    , [ binary "|" (\x y -> AltMatch [x,y]) AssocLeft
+      , binary "or" (\x y -> AltMatch [x,y]) AssocLeft
+      ]
+    ]
   where
-    allMatch :: Parser JobMatch
-    allMatch = char '*' >> pure AllMatch
+    binary  name fun assoc = Infix (fun <$ reservedOp name) assoc
+    prefix  name fun       = Prefix (fun <$ reservedOp name)
+    reservedOp name = reserve emptyOps name
+
+parseJobMatch :: Parser JobMatch
+parseJobMatch = expr
+  where
+    expr = buildExpressionParser opTable term <?> "job match expression"
+
+    term = parens expr <|> simple
+
+    simple = starMatch <|> jobIdMatch <|> stateMatch <|> nameMatch
+
+    starMatch :: Parser JobMatch
+    starMatch = char '*' >> pure (NegMatch NoMatch)
 
     nameMatch :: Parser JobMatch
     nameMatch = do
@@ -103,10 +125,6 @@ parseJobMatch =
     jobIdMatch = do
         void $ string "id="
         JobIdMatch . JobId . fromIntegral <$> integer
-
-    negMatch = do
-        void $ char '!'
-        NegMatch <$> between (char '(') (char ')') parseJobMatch
 
 parseJobState :: Parser StateMatch
 parseJobState =

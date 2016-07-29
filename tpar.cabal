@@ -46,7 +46,8 @@ executable tpar
                        network >= 2.4 && < 2.7,
                        heaps >= 0.3 && < 0.4,
                        ansi-wl-pprint >= 0.6 && < 0.7,
-                       trifecta >= 1.5 && < 1.7
+                       trifecta >= 1.5 && < 1.7,
+                       parsers >= 0.12 && < 0.13
   default-language:    Haskell2010
   ghc-options:         -threaded -rtsopts -Wall
 
