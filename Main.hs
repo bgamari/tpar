@@ -11,6 +11,8 @@ import Data.Time.Clock
 import Data.Time.Format.Human
 import System.Exit
 import System.IO (stderr, stdout)
+import Data.Aeson as Aeson
+import qualified Data.ByteString.Lazy.Char8 as BS.L
 
 import qualified Text.PrettyPrint.ANSI.Leijen as T.PP
 import Text.PrettyPrint.ANSI.Leijen (Doc, (<+>), (<$$>))
@@ -75,6 +77,8 @@ tparParser =
                           $ fullDesc <> progDesc "Restart a failed job")
      <> command "watch"   ( info modeWatch
                           $ fullDesc <> progDesc "Watch the output of a set of jobs")
+     <> command "dump"    ( info modeDump
+                          $ fullDesc <> progDesc "Dump details about a set of jobs in JSON")
 
 withServer' :: HostName -> ServiceName
            -> (ServerIface -> Process a) -> Process a
@@ -274,6 +278,75 @@ modeStatus =
             let prettyTime = T.PP.text . humanReadableTime' time
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob verbose prettyTime) jobs ++ [mempty]
 
+modeDump :: Parser Mode
+modeDump =
+    run <$> hostOption
+        <*> portOption (help "server port number")
+        <*> (jobMatchArg <|> pure (NegMatch NoMatch))
+        <*  helper
+  where
+    run serverHost serverPort match =
+        withServer serverHost serverPort $ \iface -> do
+            Right jobs <- callRpc (getQueueStatus iface) match
+            liftIO $ BS.L.putStrLn $ Aeson.encode $ map jobToJson jobs
+
+jobToJson :: Job -> Value
+jobToJson (Job {jobRequest = JobRequest{..}, ..}) =
+    object [ "id"           .= fromEnum jobId
+           , "name"         .= case jobName of JobName s -> s
+           , "priority"     .= fromEnum jobPriority
+           , "command"      .= jobCommand
+           , "arguments"    .= jobArgs
+           , "working_dir"  .= jobCwd
+           , "remote_logs"  .= object [ "stdout" .= stdOut jobSinks
+                                      , "stderr" .= stdErr jobSinks
+                                      ]
+           , "environment"  .= jobEnv
+           , "state"        .= state
+           ]
+  where
+    stateObj s rest = object $ ("state" .= (s :: String)) : rest
+    state =
+        case jobState of
+          Queued {..}   ->
+              stateObj "queued"
+              [ "queued_at"      .= jobQueueTime ]
+          Starting {..} ->
+              stateObj "starting"
+              [ "queued_at"      .= jobQueueTime
+              , "starting_since" .= jobStartingTime
+              , "running_on"     .= show jobProcessId
+              ]
+          Running {..}  ->
+              stateObj "running"
+              [ "queued_at"      .= jobQueueTime
+              , "started_at"     .= jobStartTime
+              , "running_on"     .= show jobProcessId
+              ]
+          Finished {..} ->
+              stateObj "finished"
+              [ "queued_at"      .= jobQueueTime
+              , "started_at"     .= jobStartTime
+              , "finished_at"    .= jobFinishTime
+              , "ran_on"         .= show jobWorkerNode
+              , "exit_code"      .= getExitCode jobExitCode
+              ]
+          Failed {..} ->
+              stateObj "finished"
+              [ "queued_at"      .= jobQueueTime
+              , "started_at"     .= jobStartTime
+              , "failed_at"      .= jobFailedTime
+              , "ran_on"         .= show jobWorkerNode
+              , "error"          .= jobErrorMsg
+              ]
+          Killed {..} ->
+              stateObj "killed"
+              [ "queued_at"      .= jobQueueTime
+              , "started_at"     .= jobKilledStartTime
+              , "killed_at"      .= jobKilledTime
+              , "ran_on"         .= show jobKilledWorkerNode
+              ]
+
 prettyJob :: Bool -> (UTCTime -> Doc) -> Job -> Doc
 prettyJob verbose prettyTime (Job {..}) =
     T.PP.vcat $ [header] ++ (if verbose then [details] else [])
@@ -336,8 +409,9 @@ prettyJob verbose prettyTime (Job {..}) =
     prettyJobName (JobName name) = T.PP.bold $ T.PP.text name
     prettyPriority (Priority p)  = T.PP.int p
 
-    getExitCode ExitSuccess     = 0
-    getExitCode (ExitFailure c) = c
+getExitCode :: ExitCode -> Int
+getExitCode ExitSuccess     = 0
+getExitCode (ExitFailure c) = c
 
 prettyShow :: Show a => a -> Doc
 prettyShow = T.PP.text . show

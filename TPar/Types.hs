@@ -18,7 +18,7 @@ import TPar.SubPubStream
 import TPar.Rpc
 
 newtype JobId = JobId Int
-              deriving (Eq, Ord, Show, Binary)
+              deriving (Eq, Ord, Show, Enum, Binary)
 
 data Job = Job { jobId      :: !JobId
                , jobRequest :: JobRequest
@@ -53,7 +53,7 @@ data JobRequest = JobRequest { jobName     :: !JobName
 instance Binary JobRequest
 
 newtype Priority = Priority Int
-                 deriving (Eq, Ord, Show, Binary)
+                 deriving (Eq, Ord, Show, Enum, Binary)
 
 data JobState
     = -- | the job is waiting to be run
