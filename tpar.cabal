@@ -60,12 +60,18 @@ license:             BSD3
 license-file:        LICENSE
 author:              Ben Gamari
 maintainer:          bgamari@gmail.com
-copyright:           (c) 2014 Ben Gamari <bgamari@gmail.com>
+copyright:           (c) 2014-2016 Ben Gamari <bgamari@gmail.com>
 category:            System
 build-type:          Simple
+homepage:            http://github.com/bgamari/tpar/
+bug-reports:         http://github.com/bgamari/tpar/issues
 cabal-version:       >=1.10
 extra-source-files:
     README.mkd
+
+source-repository head
+  location:            git://github.com/bgamari/tpar
+  type:                git
 
 executable tpar
   main-is:             Main.hs
