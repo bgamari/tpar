@@ -20,6 +20,7 @@ import Control.Distributed.Process hiding (catch)
 import Control.Distributed.Process.Serializable
 import Control.Concurrent.STM
 import Pipes
+import TPar.Utils
 
 newtype SubPubSource a r = SubPubSource (SendPort (SendPort (DataMsg a r), SendPort ()))
                          deriving (Show, Eq, Ord, Binary)
@@ -82,14 +83,14 @@ fromProducer' prod0 = do
             mx <- next prod
             case mx of
               Left r -> do
-                  say "feedChan:finishing"
+                  tparDebug "feedChan:finishing"
                   liftIO $ atomically $ writeTBQueue queue (Done r)
-                  say "feedChan:finished"
+                  tparDebug "feedChan:finished"
                   return $ Right r
 
               Right (x, prod') -> do
-                  say "feedChan:fed"
-                  x `seq` say "feedChan:forced"
+                  tparDebug "feedChan:fed"
+                  x `seq` tparDebug "feedChan:forced"
                   liftIO $ atomically $ writeTBQueue queue (More x)
                   go prod'
 
@@ -103,24 +104,24 @@ fromProducer' prod0 = do
              -- ^ active subscribers
          -> Process ()
     loop feederRef subReqRP dataQueue subscribers = do
-        say "loop:preMatch"
+        tparDebug "loop:preMatch"
         receiveWait
             [ -- handle death of a subscriber
               matchIf (\(ProcessMonitorNotification mref _ _) -> mref `M.member` subscribers)
-              $ \(ProcessMonitorNotification mref pid reason) -> do
-                  say "loop:subDied"
+              $ \(ProcessMonitorNotification mref _pid _reason) -> do
+                  tparDebug "loop:subDied"
                   loop feederRef subReqRP dataQueue (M.delete mref subscribers)
 
               -- subscription request
             , matchChan subReqRP $ \(sink, confirm) -> do
-                  say "loop:subReq"
+                  tparDebug "loop:subReq"
                   sinkRef <- monitorPort sink
                   sendChan confirm ()
                   loop feederRef subReqRP dataQueue (M.insert sinkRef sink subscribers)
 
               -- data for subscribers
             , matchSTM (readTBQueue dataQueue) $ \msg -> do
-                  say "loop:data"
+                  tparDebug "loop:data"
                   sendToSubscribers msg
                   case msg of
                     More _ ->
@@ -130,7 +131,7 @@ fromProducer' prod0 = do
               -- handle death of the feeder
             , matchIf (\(ProcessMonitorNotification mref _ _) -> mref == feederRef)
               $ \(ProcessMonitorNotification _ pid reason) -> do
-                  say "loop:feederDied"
+                  tparDebug "loop:feederDied"
                   sendToSubscribers $ Failed $ SubPubProducerFailed pid reason
             ]
       where
@@ -154,12 +155,12 @@ subscribe :: forall a r. (Serializable a, Serializable r)
 subscribe (SubPubSource reqSP) = do
     -- We provide a channel to confirm that we have actually been subscribed
     -- so that we can safely link during negotiation.
-    say "subscribing"
+    tparDebug "subscribing"
     mref <- monitorPort reqSP
     (confirmSp, confirmRp) <- newChan
     (dataSp, dataRp) <- newChan
     sendChan reqSP (dataSp, confirmSp)
-    say "subscribe: waiting for confirmation"
+    tparDebug "subscribe: waiting for confirmation"
     let go = do
             msg <- lift $ receiveWait
                 [ matchChan dataRp return
