@@ -34,7 +34,6 @@ import Control.Concurrent.STM
 
 import Pipes
 import qualified Pipes.Prelude as P.P
-import qualified Pipes.Safe as Safe
 
 import TPar.Rpc
 import TPar.SubPubStream as SubPub
@@ -51,7 +50,7 @@ enqueueAndFollow :: ServerIface -> JobRequest
                  -> Process (Producer ProcessOutput Process ExitCode)
 enqueueAndFollow iface jobReq = do
     (rpcSp, rpcRp) <- newRpc
-    jobId <- callRpc (enqueueJob iface) (jobReq, Just rpcSp)
+    _jobId <- callRpc (enqueueJob iface) (jobReq, Just rpcSp)
     receiveWait
         [ matchRpc rpcRp $ \subPub -> do
               mprod <- subscribe subPub
@@ -181,22 +180,22 @@ server jobQueue = do
 
             , matchRpc' requestJobRp $ \workerPid () reply -> do
                   tparDebug $ "request job: "++show workerPid
-                  spawnLocal $ do
+                  _ <- spawnLocal $ do
                       link serverPid
                       handleJobRequest jobQueue workerPid reply
                   return ()
 
-            , matchRpc getQueueStatusRp $ \match -> do
+            , matchRpc getQueueStatusRp $ \jobMatch -> do
                   q <- liftIO $ atomically $ getJobs jobQueue
-                  let filtered = filter (jobMatches match) q
+                  let filtered = filter (jobMatches jobMatch) q
                   return (filtered, ())
 
-            , matchRpc killJobsRp $ \match -> do
-                  killedJobs <- handleKillJobs jobQueue match
+            , matchRpc killJobsRp $ \jobMatch -> do
+                  killedJobs <- handleKillJobs jobQueue jobMatch
                   return (killedJobs, ())
 
-            , matchRpc rerunJobsRp $ \match -> do
-                  reran <- handleRerunJobs jobQueue match
+            , matchRpc rerunJobsRp $ \jobMatch -> do
+                  reran <- handleRerunJobs jobQueue jobMatch
                   return (reran, ())
             ]
     return $ ServerIface {..}
@@ -225,12 +224,13 @@ handleJobRequest jobQueue workerPid reply = do
     -- wait for started notification
     jobMonitor <- receiveWait
         [matchRpc startedRp $ \jobMonitor -> do
-            flip traverse (jobStartingNotify job) $ \notifyOriginator -> do
+            forM_ (jobStartingNotify job) $ \notifyOriginator -> do
                 res <- callRpc notifyOriginator jobMonitor
                 case res of
                   Right () -> return ()
                   Left reason ->
-                      say $ "Job starting notification to "++show notifyOriginator++" failed. Starting anyways."
+                      say $ "Job starting notification to "++show notifyOriginator
+                         ++" failed due to "++show reason++". Starting anyways."
             return ((), jobMonitor)
         ]
     jobStartTime <- liftIO getCurrentTime
@@ -252,13 +252,13 @@ handleJobRequest jobQueue workerPid reply = do
     unmonitor monRef
 
 handleKillJobs :: JobQueue -> JobMatch -> Process [Job]
-handleKillJobs jq@(JobQueue {..}) match = do
+handleKillJobs jq@(JobQueue {..}) jobMatch = do
     let shouldBeKilled :: Job -> Maybe (Maybe ProcessId, JobId)
         shouldBeKilled job@(Job {..})
           | Running {..} <- jobState
-          , jobMatches match job    = Just (Just jobProcessId, jobId)
+          , jobMatches jobMatch job    = Just (Just jobProcessId, jobId)
           | Queued {..}  <- jobState
-          , jobMatches match job    = Just (Nothing, jobId)
+          , jobMatches jobMatch job    = Just (Nothing, jobId)
           | otherwise               = Nothing
     jobsToKill <- liftIO $ atomically $ mapMaybe shouldBeKilled <$> getJobs jq
     say $ "killing "++show jobsToKill
@@ -288,12 +288,12 @@ handleKillJobs jq@(JobQueue {..}) match = do
     liftIO $ atomically $ filter (\job -> jobId job `S.member` killedSet) <$> getJobs jq
 
 handleRerunJobs :: JobQueue -> JobMatch -> Process [Job]
-handleRerunJobs jq@(JobQueue {..}) match = do
+handleRerunJobs jq@(JobQueue {..}) jobMatch = do
     jobQueueTime <- liftIO getCurrentTime
     liftIO $ atomically $ do
-        jobs <- getJobs jq
+        allJobs <- getJobs jq
         filterM (\job -> reEnqueueJob jq job jobQueueTime)
-            $ filter (jobMatches match) jobs
+            $ filter (jobMatches jobMatch) allJobs
 
 -----------------------------------------------------
 -- primitives
