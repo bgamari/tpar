@@ -398,11 +398,11 @@ prettyJob verbose prettyTime (Job {..}) =
 
     prettyJobState Queued{}           = T.PP.blue "queued"
     prettyJobState Starting{}         = T.PP.blue "starting"
-    prettyJobState Running{}          = T.PP.green "running"
+    prettyJobState Running{}          = T.PP.cyan "running"
     prettyJobState Finished{..}
-      | ExitFailure _ <- jobExitCode  = T.PP.yellow $ "finished"
-      | otherwise                     = T.PP.cyan "finished"
-    prettyJobState Failed{}           = T.PP.red "failed"
+      | ExitFailure _ <- jobExitCode  = T.PP.yellow $ "failed"
+      | otherwise                     = T.PP.green "finished"
+    prettyJobState Failed{}           = T.PP.red "job failed"
     prettyJobState Killed{}           = T.PP.yellow "killed"
 
     prettyJobId (JobId n)        = T.PP.int n
