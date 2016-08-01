@@ -69,7 +69,7 @@ interleave producers = do
         _ <- monitor pid
         return input
 
-    let matchTermination = match $ \(ProcessMonitorNotification _ pid reason) ->
+    let matchTermination = match $ \(ProcessMonitorNotification _ _pid reason) ->
                                      case reason of
                                        DiedNormal -> return Nothing
                                        _          -> throwM $ InterleaveException $ show reason

@@ -19,7 +19,8 @@ import Text.PrettyPrint.ANSI.Leijen (Doc, (<+>), (<$$>))
 import qualified Network.Transport.TCP as TCP
 import Network.Socket (ServiceName, HostName)
 import Network.BSD (getHostName)
-import Options.Applicative
+import Options.Applicative hiding (action, header)
+import qualified Options.Applicative as O
 import Control.Concurrent (threadDelay)
 import Control.Distributed.Process
 import Control.Distributed.Process.Internal.Types (NodeId(..))
@@ -55,10 +56,10 @@ jobMatchArg = argument (liftTrifecta parseJobMatch) (help "job match expression"
 type Mode = IO ()
 
 tpar :: ParserInfo Mode
-tpar = info (helper <*> tparParser)
-     $ fullDesc
-    <> progDesc "Start queues, add workers, and enqueue tasks"
-    <> header "tpar - simple distributed task queuing"
+tpar = O.info (helper <*> tparParser)
+     $ O.fullDesc
+    <> O.progDesc "Start queues, add workers, and enqueue tasks"
+    <> O.header "tpar - simple distributed task queuing"
 
 tparParser :: Parser Mode
 tparParser =
@@ -135,16 +136,16 @@ modeWorker =
       | n >= 1 = return n
       | otherwise = fail "Worker count (-N) should be at least one"
 
-    run nWorkers serverHost serverPort reconnect =
+    run nWorkers serverHost serverPort reconnectPeriod =
         perhapsRepeat $ withServer serverHost serverPort $ \serverIface -> do
             replicateM_ nWorkers $ spawnLocal $ runRemoteWorker serverIface
             liftIO $ forever threadDelay maxBound
       where
         perhapsRepeat action
-          | Just period <- reconnect = forever $ do
+          | Just period <- reconnectPeriod = forever $ do
                 handleAll (liftIO . print) action
                 liftIO (threadDelay $ 1000*1000*period)
-          | otherwise                = action
+          | otherwise  = action
 
 modeServer :: Parser Mode
 modeServer =
@@ -236,9 +237,9 @@ modeWatch =
         <*> jobMatchArg
         <*  helper
   where
-    run serverHost serverPort match =
+    run serverHost serverPort jobMatch =
         withServer serverHost serverPort $ \iface -> do
-            inputs <- subscribeToJobs iface match
+            inputs <- subscribeToJobs iface jobMatch
             let input = foldMap fold inputs
                 failed = M.keys $ M.filter isNothing inputs
             unless (null failed) $ liftIO $ print
@@ -250,8 +251,8 @@ modeWatch =
 
 subscribeToJobs :: ServerIface -> JobMatch
                 -> Process (M.Map JobId (Maybe (P.C.Input ProcessOutput)))
-subscribeToJobs iface match = do
-    Right jobs <- callRpc (getQueueStatus iface) match
+subscribeToJobs iface jobMatch = do
+    Right jobs <- callRpc (getQueueStatus iface) jobMatch
     prods <- traverse SubPub.subscribe
         $ M.unions
         [ M.singleton jobId jobMonitor
@@ -275,9 +276,9 @@ modeStatus =
         <*> (jobMatchArg <|> pure (NegMatch NoMatch))
         <*  helper
   where
-    run serverHost serverPort verbose match =
+    run serverHost serverPort verbose jobMatch =
         withServer serverHost serverPort $ \iface -> do
-            Right jobs <- callRpc (getQueueStatus iface) match
+            Right jobs <- callRpc (getQueueStatus iface) jobMatch
             time <- liftIO getCurrentTime
             let prettyTime = T.PP.text . humanReadableTime' time
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob verbose prettyTime) jobs ++ [mempty]
@@ -289,9 +290,9 @@ modeDump =
         <*> (jobMatchArg <|> pure (NegMatch NoMatch))
         <*  helper
   where
-    run serverHost serverPort match =
+    run serverHost serverPort jobMatch =
         withServer serverHost serverPort $ \iface -> do
-            Right jobs <- callRpc (getQueueStatus iface) match
+            Right jobs <- callRpc (getQueueStatus iface) jobMatch
             liftIO $ BS.L.putStrLn $ Aeson.encode $ map jobToJson jobs
 
 jobToJson :: Job -> Value
@@ -427,9 +428,9 @@ modeKill =
         <*> jobMatchArg
         <*  helper
   where
-    run serverHost serverPort match =
+    run serverHost serverPort jobMatch =
         withServer serverHost serverPort $ \iface -> do
-            Right jobs <- callRpc (killJobs iface) match
+            Right jobs <- callRpc (killJobs iface) jobMatch
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False prettyShow) jobs ++ [mempty]
             liftIO $ when (null jobs) $ exitWith $ ExitFailure 1
 
@@ -440,9 +441,9 @@ modeRerun =
         <*> jobMatchArg
         <*  helper
   where
-    run serverHost serverPort match =
+    run serverHost serverPort jobMatch =
         withServer serverHost serverPort $ \iface -> do
-            Right jobs <- callRpc (rerunJobs iface) match
+            Right jobs <- callRpc (rerunJobs iface) jobMatch
             liftIO $ T.PP.putDoc $ T.PP.vcat $ map (prettyJob False prettyShow) jobs ++ [mempty]
             liftIO $ when (null jobs) $ exitWith $ ExitFailure 1
 
