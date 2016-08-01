@@ -9,41 +9,48 @@ description:
     Configuring a @tpar@ instance is simply a matter of running @tpar server@ on
     a designated server machine,
     .
-    >>> $ # We'll need to know the hostname of the server
-    >>> $ hostname
-    >>> my-server
-    >>> $ # Start a server also running 8 local workers
-    >>> $ tpar server -Hmy-server -N8
+    > $ # We'll need to know the hostname of the server
+    > $ hostname
+    > my-server
+    > $ # Start a server also running 8 local workers
+    > $ tpar server -Hmy-server -N8
     .
     Submitting a job is then similarly easy,
     .
-    >>> $ tpar enqueue -H`hostname` -- long-process arg1 arg2
+    > $ tpar enqueue -H`hostname` -- long-process arg1 arg2
     .
     One can then enqueue jobs easily
     .
-    >>> $ tpar enqueue -Hmy-server -- bash -c "primes 10000000000  | head -n1"
-    >>> $ tpar status -v
-    >>> 0     unnamed-job                                        finished
-    >>>     priority:       0
-    >>>     queued:         1 seconds ago
-    >>>     command:        bash
-    >>>     arguments:      -c primes 10000000000  | head -n1
-    >>>     logging:        stdout: none
-    >>>                     stderr: none
-    >>>     status:         finished with 0 (at 1 seconds ago)
-    >>>                     started at 1 seconds ago
-    >>>                     ran on nid://localhost:5757:0
+    > $ tpar enqueue -Hmy-server -- bash -c "primes 10000000000  | head -n1"
+    > $ tpar status -v
+    > 0     unnamed-job                                        finished
+    >     priority:       0
+    >     queued:         1 seconds ago
+    >     command:        bash
+    >     arguments:      -c primes 10000000000  | head -n1
+    >     logging:        stdout: none
+    >                     stderr: none
+    >     status:         finished with exit code 0 (1 seconds ago)
+    >                     started 1 seconds ago
+    >                     ran on nid://localhost:5757:0
+    .
+    Here we see that the job (which was given job ID 0, as we see on the first
+    line of the @tpar status -v@ output) ran on @localhost@ and ran for less
+    than a second before terminating with exit code 0.
     .
     One can add more workers to help churn through the work queue using the
     @tpar worker@ command,
     .
-    >>> $ # Add 16 more workers running on another machine
-    >>> $ ssh my-workers -- tpar worker -Hmy-server -N16
+    > $ # Add 16 more workers running on another machine
+    > $ ssh my-workers -- tpar worker -Hmy-server -N16
     .
     Finally, the output of running jobs can be monitored using the @tpar watch@
     command,
     .
-    >>> $ tpar watch id=0
+    > $ tpar watch id=0 or id=1
+    .
+    This command will produce the output of standard output and standard error
+    to the console until the 
 
 homepage:            http://github.com/bgamari/tpar
 license:             BSD3
