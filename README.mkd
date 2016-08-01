@@ -1,6 +1,6 @@
 # tpar — simple parallel job scheduling
 
-tpar is a simple tool for concurrent job scheduling. Say you have a
+`tpar` is a simple tool for concurrent job scheduling. Say you have a
 directory full of files which need processing,
 
 ```bash
@@ -23,8 +23,8 @@ $ tpar server -N8
 $ for f in *; do tpar enqueue -- process $f; done;
 ```
 
-If you have multiple machines with the data mounted over, say, NFS,
-they can also help with churning through the queue,
+If you have multiple machines with the data mounted over, say, NFS, they can
+also help with churning through the queue,
 
 ```bash
 $ for m in worker1 worker2 worker3; do
@@ -32,13 +32,44 @@ $ for m in worker1 worker2 worker3; do
 > done
 ```
 
-## Overview
+## Commands
 
- consists of a queue server, a set of workers, and 
-`tpar` has three subcommands,
+`tpar` has several subcommands,
 
   * `tpar server` starts a local queue server.
-  * `tpar enqueue $cmd` enqueues a job in the given queue
-  * `tpar worker -H $host -p $port` starts a worker associated with
+  * `tpar worker` starts a worker associated with
     the given queue
-    
+  * `tpar enqueue -- $cmd` enqueues a job in the given queue
+  * `tpar status` allows you to query for the status of the queue. You can also provide a job match expression 
+  * `tpar kill` kills a running task (specified by a job match expression)
+  * `tpar watch` is analogous `tail -f`, watching the output of a set of running tasks
+  * `tpar dump` dumps a JSON representation of the queue state.
+
+Nearly all of these commands will require that the `-H` option be provided
+specifying the canonical hostname of the queue server (the machine running
+`tpar server`).
+
+
+## Job match expressions
+
+Several `tpar` commands accept a *job match expression*, which specifies the
+subset of jobs on which the command should act. For instance (note the quotes to
+ensure that `bash` doesn't interpret our symbols),
+
+```
+$ tpar status '*'    # This is equivalent to `tpar status` run without an argument
+$ tpar status id=2
+$ tpar status state=running
+$ tpar status 'name="my-job" or name="my-other-job"'
+```
+
+These expressions consist of the primitive matches,
+ * `name="STRING"`, which matches on the job name provided in the `--name` of
+   `tpar enqueue`.
+ * `id=`, which matches on the job ID
+ * `state=`, which matches on the current state of the job (`queued`, `running`,
+   `finished`, `failed`, `killed`, or `code=N`)
+ * `*`, which matches all jobs
+ 
+These matches can be connected with the `and` and `or` operators, and inverted
+with `!`.
