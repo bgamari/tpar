@@ -161,6 +161,7 @@ runServer = do
 -- | The heart of the server
 server :: JobQueue -> Process ServerIface
 server jobQueue = do
+    let protocolVersion = currentProtocolVersion
     (enqueueJob, enqueueJobRp) <- newRpc
     (requestJob, requestJobRp) <- newRpc
     (getQueueStatus, getQueueStatusRp) <- newRpc

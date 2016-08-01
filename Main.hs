@@ -98,6 +98,10 @@ withServer' host port action = do
         , matchChan rq pure
         ]
 
+    unless (protocolVersion iface == currentProtocolVersion) $
+        fail $ "tpar protocol version mismatch: server speaks "++show (protocolVersion iface)
+            ++ ", client speaks "++show currentProtocolVersion
+
     -- request server interface
     link (serverPid iface)
     unlinkNode nid

@@ -23,16 +23,22 @@ type JobStartedNotify = RpcSendPort (SubPubSource ProcessOutput ExitCode) ()
 type JobFinishedChan = SendPort (UTCTime, ExitCode)
 
 data ServerIface =
-    ServerIface { serverPid      :: ProcessId
-                , enqueueJob     :: RpcSendPort (JobRequest, Maybe JobStartingNotify) JobId
-                , requestJob     :: RpcSendPort () (Job, JobStartedNotify, JobFinishedChan)
-                , killJobs       :: RpcSendPort JobMatch [Job]
-                , getQueueStatus :: RpcSendPort JobMatch [Job]
-                , rerunJobs      :: RpcSendPort JobMatch [Job]
+    ServerIface { protocolVersion :: ProtocolVersion
+                , serverPid       :: ProcessId
+                , enqueueJob      :: RpcSendPort (JobRequest, Maybe JobStartingNotify) JobId
+                , requestJob      :: RpcSendPort () (Job, JobStartedNotify, JobFinishedChan)
+                , killJobs        :: RpcSendPort JobMatch [Job]
+                , getQueueStatus  :: RpcSendPort JobMatch [Job]
+                , rerunJobs       :: RpcSendPort JobMatch [Job]
                 }
     deriving (Generic)
 
 instance Binary ServerIface
+
+type ProtocolVersion = Int
+
+currentProtocolVersion :: ProtocolVersion
+currentProtocolVersion = 5
 
 {- $ the-story
 
